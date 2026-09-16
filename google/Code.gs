@@ -9,6 +9,8 @@ function setupTrace() {
   if (!TRACE_CONFIG.secret || TRACE_CONFIG.secret.length < 40) throw new Error('사이트에서 설치 코드를 다시 받으세요.');
   const owner = Session.getEffectiveUser().getEmail().toLowerCase();
   if (owner !== TRACE_CONFIG.ownerEmail.toLowerCase()) throw new Error('지정한 구글 계정으로 실행하세요.');
+  if (typeof Sheets === 'undefined') throw new Error('왼쪽 서비스 +에서 Google Sheets API를 추가한 뒤 다시 실행하세요.');
+  Sheets.Spreadsheets.get(TRACE_CONFIG.spreadsheetId, { fields: 'spreadsheetId' });
   SpreadsheetApp.openById(TRACE_CONFIG.spreadsheetId);
   ['folderId', 'recordsFolderId', 'referencesFolderId', 'resultsFolderId', 'backupsFolderId'].forEach(k => {
     const folder = DriveApp.getFolderById(TRACE_CONFIG[k]);

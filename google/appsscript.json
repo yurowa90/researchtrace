@@ -1,6 +1,7 @@
 {
   "timeZone": "Asia/Seoul",
   "runtimeVersion": "V8",
+  "dependencies": { "enabledAdvancedServices": [{ "userSymbol": "Sheets", "version": "v4", "serviceId": "sheets" }] },
   "exceptionLogging": "NONE",
   "oauthScopes": [
     "https://www.googleapis.com/auth/drive",
