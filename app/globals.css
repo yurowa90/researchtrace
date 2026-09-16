@@ -1,0 +1,178 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+:root {
+  --background: #f4f7fb;
+  --foreground: #102342;
+  --card: #ffffff;
+  --card-foreground: #102342;
+  --popover: #ffffff;
+  --popover-foreground: #102342;
+  --primary: #173a73;
+  --primary-foreground: #ffffff;
+  --secondary: #edf2f8;
+  --secondary-foreground: #36516f;
+  --muted: #eef2f7;
+  --muted-foreground: #718095;
+  --accent: #e5edf9;
+  --accent-foreground: #173a73;
+  --destructive: #c43b45;
+  --border: #dfe6ef;
+  --input: #d8e1ec;
+  --ring: #2457d6;
+  --chart-1: #2457d6;
+  --chart-2: #0d8b72;
+  --chart-3: #7a4cc5;
+  --chart-4: #d56e24;
+  --chart-5: #2f88c8;
+  --radius: 0.8rem;
+  --sidebar: #102b55;
+  --sidebar-foreground: #f4f7fb;
+  --sidebar-primary: #77e0c2;
+  --sidebar-primary-foreground: #0c3f39;
+  --sidebar-accent: #ffffff14;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #ffffff1a;
+  --sidebar-ring: #77e0c2;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", Inter,
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0d1c31;
+    --foreground: #ecf3ff;
+    --card: #142640;
+    --card-foreground: #ecf3ff;
+    --popover: #142640;
+    --popover-foreground: #ecf3ff;
+    --primary: #78a7ff;
+    --primary-foreground: #071427;
+    --secondary: #1c314e;
+    --secondary-foreground: #d9e7fb;
+    --muted: #1b2e48;
+    --muted-foreground: #a7b8cd;
+    --accent: #203b5f;
+    --accent-foreground: #ffffff;
+    --destructive: #ff7178;
+    --border: #ffffff1c;
+    --input: #ffffff28;
+    --ring: #78a7ff;
+    --chart-1: #78a7ff;
+    --chart-2: #77e0c2;
+    --chart-3: #b694f5;
+    --chart-4: #ffb06a;
+    --chart-5: #6bc7f0;
+    --sidebar: #08182d;
+    --sidebar-foreground: #eef5ff;
+    --sidebar-primary: #77e0c2;
+    --sidebar-primary-foreground: #071f1c;
+    --sidebar-accent: #ffffff14;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #ffffff1a;
+    --sidebar-ring: #737373;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", Inter,
+    system-ui, sans-serif;
+  min-width: 320px;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+a,
+input,
+textarea,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: #c9d9f5;
+  color: #102342;
+}
+
+@media print {
+  .no-print,
+  [data-slot="sheet-close"] {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  [data-slot="sheet-overlay"] {
+    display: none !important;
+  }
+
+  [data-slot="sheet-content"] {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    transform: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+}

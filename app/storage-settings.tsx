@@ -1,0 +1,31 @@
+"use client";
+import * as React from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
+type Status={state:"legacy"|"migrating"|"google";connected:boolean;endpoint:string;folderUrl:string;sheetUrl:string;repositoryUrl:string};
+async function settingsAction(action: string, extra: Record<string,unknown>={}) {
+  const response=await fetch("/api/storage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...extra})});
+  const value=await response.json() as {error?:string;code?:string;total?:number};if(!response.ok)throw new Error(value.error||"연결 설정을 완료하지 못했습니다.");return value;
+}
+export function StorageSettings({onChanged}:{onChanged:()=>Promise<void>}) {
+  const [status,setStatus]=React.useState<Status|null>(null),[error,setError]=React.useState(""),[endpoint,setEndpoint]=React.useState(""),[code,setCode]=React.useState(""),[busy,setBusy]=React.useState(false),[progress,setProgress]=React.useState("");
+  const lock=React.useRef(false);
+  const refresh=React.useCallback(async()=>{const response=await fetch("/api/storage",{cache:"no-store"});const value=await response.json() as Status & {error?:string};if(!response.ok)throw new Error(value.error);setStatus(value);setEndpoint(value.endpoint);},[]);
+  React.useEffect(()=>{void refresh().catch(e=>setError(e.message));},[refresh]);
+  const run=async(task:()=>Promise<void>)=>{if(lock.current)return;lock.current=true;setBusy(true);setError("");try{await task();await refresh();}catch(e){setError(e instanceof Error?e.message:"연결 설정을 완료하지 못했습니다.");await refresh().catch(()=>undefined);}finally{lock.current=false;setBusy(false);}};
+  return <Card className="mb-5 border-[#c5d5e7]"><CardContent className="space-y-4 p-5"><div><h2 className="text-xl font-bold">내 구글 저장소 연결</h2><p className="mt-2 text-sm leading-6 text-[#65768b]">원본은 드라이브에, 학생·성적·연구 이력은 시트에 저장합니다. 최초 한 번 소유자 계정의 실행 권한 승인이 필요합니다.</p></div>
+    {status&&<><div className="flex flex-wrap gap-2"><Button asChild variant="outline" size="sm"><a href={status.folderUrl} target="_blank" rel="noreferrer">드라이브 폴더 열기</a></Button><Button asChild variant="outline" size="sm"><a href={status.sheetUrl} target="_blank" rel="noreferrer">데이터 시트 열기</a></Button><Button asChild variant="outline" size="sm"><a href={status.repositoryUrl} target="_blank" rel="noreferrer">GitHub 소스</a></Button></div>
+    <p role="status" className={`rounded-xl p-3 text-sm ${status.state==="google"?"bg-emerald-50 text-emerald-900":"bg-amber-50 text-amber-900"}`}>{status.state==="google"?"현재 저장 위치: 내 Google Drive · Google Sheets":status.state==="migrating"?"이전 중: 자료 수정을 잠시 멈췄습니다. 아래에서 이어서 복사하거나 이전을 중단할 수 있습니다.":"현재 저장 위치: 기존 사이트 저장소. 아래 연결과 이전을 마치면 구글 저장소로 바뀝니다."}</p>
+    {status.state!=="google"&&<div className="space-y-4">
+      <details className="rounded-xl border p-4" open={!status.connected}><summary className="cursor-pointer font-semibold">1. 구글 연결 코드 설치 · 최초 한 번</summary><ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6"><li>아래 설치 코드 준비를 누르고 코드를 복사합니다.</li><li>위 데이터 시트에서 <span className="font-semibold">확장 프로그램 → Apps Script</span>를 엽니다.</li><li>기존 Code.gs 내용을 복사한 코드로 바꿔 저장합니다. 함수 목록에서 <span className="font-semibold">setupTrace</span>를 선택하고 실행해 구글 권한을 승인합니다.</li><li><span className="font-semibold">배포 → 새 배포 → 웹 앱</span>에서 실행 사용자는 나, 액세스 권한은 모든 사용자로 설정합니다. 연결 서버는 서명된 요청만 받으며 학생 자료와 폴더의 공유 설정은 제한됨으로 유지합니다.</li><li>배포한 웹 앱 URL을 아래에 붙여넣고 연결을 확인합니다.</li></ol><Button className="mt-3" variant="outline" disabled={busy} onClick={()=>void run(async()=>{const result=await settingsAction("prepare");setCode(result.code ?? "");})}>설치 코드 준비</Button>{code&&<div className="mt-3 space-y-2"><p className="text-sm text-[#65768b]">이 개인 설치 코드에는 연결 키가 포함됩니다. Apps Script에만 넣고 GitHub나 공유 문서에 올리지 마세요.</p><Button variant="outline" size="sm" onClick={async()=>{try{await navigator.clipboard.writeText(code);toast.success("설치 코드를 복사했습니다.");}catch{toast.message("아래 코드를 선택해 복사하세요.");}}}>설치 코드 복사</Button><Textarea aria-label="구글 개인 설치 코드" readOnly value={code} className="h-32 font-mono text-xs"/></div>}</details>
+      <div className="grid gap-2"><Label htmlFor="google-endpoint">2. 웹 앱 URL</Label><div className="flex flex-wrap gap-2"><Input id="google-endpoint" value={endpoint} onChange={e=>setEndpoint(e.target.value)} disabled={busy||status.state==="migrating"} className="min-w-48 flex-1" placeholder="https://script.google.com/macros/s/…/exec"/><Button variant="outline" disabled={busy||!endpoint||status.state==="migrating"} onClick={()=>void run(async()=>{await settingsAction("connect",{endpoint});setCode("");toast.success("구글 저장소 연결을 확인했습니다.");})}>연결 확인</Button></div></div>
+      <div className="rounded-xl border p-4"><h3 className="font-semibold">3. 기존 자료 복사 후 전환</h3><p className="mt-2 text-sm leading-6 text-[#65768b]">복사 중에는 사이트의 자료 수정을 잠시 멈춥니다. 원본 파일과 데이터 검증이 끝나면 구글 저장소를 사용합니다. 기존 저장소의 자료는 삭제하지 않습니다.</p><div className="mt-3 flex flex-wrap gap-2"><Button className="bg-[#173a73]" disabled={busy||!status.connected} onClick={()=>void run(async()=>{const result=await settingsAction("start");for(let index=0;index<(result.total ?? 0);index++){setProgress(`원본 복사 ${index+1} / ${(result.total ?? 0)}`);await settingsAction("copyFile",{index});}setProgress("학생·성적·연구 이력 복사와 검증 중…");await settingsAction("finish");setProgress("구글 저장소로 전환했습니다.");await onChanged();})}>{busy?"처리 중…":status.state==="migrating"?"이어서 복사·검증":"자료 복사 후 구글 저장소 사용"}</Button>{status.state==="migrating"&&<Button variant="outline" disabled={busy} onClick={()=>void run(async()=>{await settingsAction("cancel");setProgress("");await onChanged();})}>이전 중단 · 기존 저장소 사용</Button>}</div></div>
+    </div>}
+    {status.state==="google"&&<p className="text-sm leading-6 text-[#65768b]">학생과 담임에게 데이터 시트 전체를 공유하지 마세요. 자료 조회와 수정은 사이트에서 진행합니다. 이전 전 자료 사본과 연결 설정은 기존 서버에 남아 있습니다.</p>}</>}
+    {progress&&<p role="status" className="text-sm">{progress}</p>}{error&&<p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+  </CardContent></Card>;
+}
