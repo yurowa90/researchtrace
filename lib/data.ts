@@ -1,4 +1,5 @@
 import { hydrateProfileDetails, profileEvidenceIssues } from "@/lib/profile-evidence";
+import { approvedSchoolRole, canAccessSchoolStudent, canManageSchoolClass, isSchoolStaff } from "@/lib/school-permissions";
 import { guidanceForPortal } from "@/lib/guidance-store";
 import type { PortalData } from "@/lib/portal-types";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
@@ -294,7 +295,7 @@ async function seedTeacherWorkspace(teacherId: number) {
 export async function getPortalData(viewer: Viewer) {
   if (await googleEnabled()) return googlePortalData(await readGoogleState(), viewer);
   const db = getDb();
-  if (viewer.status !== "approved") {
+  if (!approvedSchoolRole(viewer)) {
     return {
       guidance: [], referenceChecks: [], appliedCriteria: [], viewer, classes: [], students: [], subjects: [], activities: [], fingerprints: [],
       threads: [], threadActivities: [], files: [], records: [], profileSnapshots: [],
@@ -489,17 +490,15 @@ export async function getPortalData(viewer: Viewer) {
 }
 
 function requireStaff(viewer: Viewer) {
-  if ((viewer.role !== "teacher" && viewer.role !== "admin") || viewer.status !== "approved") {
+  if (!isSchoolStaff(viewer)) {
     throw new Error("교사 또는 관리자 권한이 필요합니다.");
   }
 }
 
 async function teacherClass(viewer: Viewer, classId: number) {
-  if ((viewer.role !== "teacher" && viewer.role !== "admin") || viewer.status !== "approved") throw new Error("교사 또는 관리자 권한이 필요합니다.");
+  requireStaff(viewer);
   const [row] = await getDb().select().from(classes).where(eq(classes.id, classId)).limit(1);
-  if (row && viewer.role === "admin") return row;
-  if (row && row.teacherId === viewer.id) return row;
-  if (!row) throw new Error("이 학급에 접근할 수 없습니다.");
+  if (row && canManageSchoolClass(viewer, row)) return row;
   throw new Error("이 학급에 접근할 수 없습니다.");
 }
 
@@ -512,12 +511,12 @@ async function accessibleStudent(viewer: Viewer, studentId: number) {
     .where(eq(students.id, studentId))
     .limit(1);
   if (!row) throw new Error("학생을 찾을 수 없습니다.");
-  const allowed = viewer.role === "admin" || (viewer.role === "teacher" ? row.classroom.teacherId === viewer.id : row.student.userId === viewer.id);
-  if (!allowed || viewer.status !== "approved") throw new Error("이 학생 자료에 접근할 수 없습니다.");
+  if (!canAccessSchoolStudent(viewer, row.student, row.classroom)) throw new Error("이 학생 자료에 접근할 수 없습니다.");
   return row.student;
 }
 
 export async function performPortalAction(viewer: Viewer, body: Record<string, unknown>) {
+  if (!approvedSchoolRole(viewer)) throw new Error("승인된 계정 권한이 필요합니다.");
   await assertStorageWritable();
   if (await googleEnabled()) return googleAction(viewer, body);
   const action = requiredText(body.action, "작업", 80);

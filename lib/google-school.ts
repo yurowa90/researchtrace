@@ -1,4 +1,5 @@
 import { latestGuidance, decodeGuidance } from "@/lib/guidance";
+import { approvedSchoolRole, canAccessSchoolStudent, canManageSchoolClass, isSchoolAdmin, isSchoolStaff } from "@/lib/school-permissions";
 import { hydrateProfileDetails, profileEvidenceIssues } from "@/lib/profile-evidence";
 import { guidanceFromState } from "@/lib/guidance-store";
 import type { Viewer } from "@/lib/data";
@@ -20,21 +21,22 @@ function text(value: unknown, label: string, max = 2000, required = true) {
   return result;
 }
 function id(value: unknown) { const result = Number(value); if (!Number.isSafeInteger(result) || result < 1) throw new Error("대상 정보를 확인하세요."); return result; }
-function requireStaff(viewer: Viewer, admin = false) { if (viewer.status !== "approved" || (admin ? viewer.role !== "admin" : !["admin", "teacher"].includes(viewer.role))) throw new Error(admin ? "관리자 권한이 필요합니다." : "교사 또는 관리자 권한이 필요합니다."); }
+function requireStaff(viewer: Viewer, admin = false) { if (!(admin ? isSchoolAdmin(viewer) : isSchoolStaff(viewer))) throw new Error(admin ? "관리자 권한이 필요합니다." : "교사 또는 관리자 권한이 필요합니다."); }
 export function currentGoogleViewer(state: SchoolState, viewer: Viewer): Viewer {
   const current = state.tables.users.find(row => row.id === viewer.id && row.authUserId === viewer.authUserId);
   if (!current) throw new Error("사용자 권한을 확인할 수 없습니다.");
   return current;
 }
 export function googleStudentAccess(state: SchoolState, viewer: Viewer, studentId: number) {
+  viewer = currentGoogleViewer(state, viewer);
   const student = state.tables.students.find(row => row.id === studentId);
   const classroom = state.tables.classes.find(row => row.id === student?.classId);
-  if (!student || !classroom || viewer.status !== "approved" || !(viewer.role === "admin" || (viewer.role === "teacher" ? classroom.teacherId === viewer.id : student.userId === viewer.id))) throw new Error("이 학생 자료에 접근할 수 없습니다.");
+  if (!student || !classroom || !canAccessSchoolStudent(viewer, student, classroom)) throw new Error("이 학생 자료에 접근할 수 없습니다.");
   return { student, classroom };
 }
 function classAccess(state: SchoolState, viewer: Viewer, classId: number) {
   requireStaff(viewer); const classroom = state.tables.classes.find(row => row.id === classId);
-  if (!classroom || (viewer.role !== "admin" && classroom.teacherId !== viewer.id)) throw new Error("이 학급에 접근할 수 없습니다.");
+  if (!classroom || !canManageSchoolClass(viewer, classroom)) throw new Error("이 학급에 접근할 수 없습니다.");
   return classroom;
 }
 export async function ensureGoogleViewer(auth: { userId: string; email: string; displayName: string }): Promise<Viewer> {
@@ -60,7 +62,7 @@ export async function ensureGoogleViewer(auth: { userId: string; email: string; 
 }
 export function googlePortalData(state: SchoolState, givenViewer: Viewer): PortalData {
   const viewer = currentGoogleViewer(state, givenViewer), t = state.tables;
-  const approved = viewer.status === "approved", staff = approved && viewer.role !== "student";
+  const approved = Boolean(approvedSchoolRole(viewer)), staff = isSchoolStaff(viewer);
   const classes = approved ? t.classes.filter(row => viewer.role === "admin" || (viewer.role === "teacher" ? row.teacherId === viewer.id : t.students.some(s => s.classId === row.id && s.userId === viewer.id))) : [];
   const classIds = new Set(classes.map(row => row.id));
   const students = t.students.filter(row => classIds.has(row.classId) && (staff || row.userId === viewer.id)).sort((a,b) => a.studentNumber.localeCompare(b.studentNumber));
@@ -104,6 +106,7 @@ export async function googleAction(givenViewer: Viewer, body: Record<string, unk
   return result;
 }
 export function applyGoogleAction(state: SchoolState, viewer: Viewer, body: Record<string, unknown>): Record<string, unknown> {
+  viewer = currentGoogleViewer(state, viewer);
   requireStaff(viewer);
   const t = state.tables, action = text(body.action,"작업",80);
   if (action === "addClass") {

@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { approvedSchoolRole } from "@/lib/school-permissions";
 import { getDb } from "@/db";
 import { classes, guidanceEntries, referenceMaterials, studentRecords, students } from "@/db/schema";
 import type { Viewer } from "@/lib/data";
@@ -19,7 +20,7 @@ type Context = {
   classroomIds: number[];
 };
 function fail(message: string): never { throw new Error(message); }
-function approved(viewer: Viewer) { if (viewer.status !== "approved") fail("승인된 계정으로 로그인하세요."); }
+function approved(viewer: Viewer) { if (!approvedSchoolRole(viewer)) fail("승인된 계정으로 로그인하세요."); }
 
 export function prepareGuidanceRevision(viewer: Viewer, current: GuidanceEntry | undefined, body: Record<string, unknown>, context: Context): Omit<StoredGuidance, "id" | "createdAt"> {
   approved(viewer);

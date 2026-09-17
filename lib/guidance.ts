@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { approvedSchoolRole, isSchoolStaff } from "@/lib/school-permissions";
 import type { PortalData, Viewer } from "@/lib/portal-types";
 
 export const guidanceKinds = { action: "다음 할 일", question: "질문 성장", observation: "교사 관찰", reflection: "읽기·설명·성찰", correction: "분석 정정 요청", record_review: "학생부 검토", reference: "평가 자료 판본", course_offering: "학교 개설 과목", student_plan: "진학·과목 계획", enrollment: "학급 이동" } as const;
@@ -75,9 +76,9 @@ export function latestGuidance<T extends { entityKey: string; revision: number }
   for (const row of rows) if (!current.has(row.entityKey) || current.get(row.entityKey)!.revision < row.revision) current.set(row.entityKey, row);
   return [...current.values()];
 }
-export function isStaff(viewer: Viewer) { return viewer.status === "approved" && viewer.role !== "student"; }
+export function isStaff(viewer: Viewer) { return isSchoolStaff(viewer); }
 export function guidanceVisible(row: Pick<GuidanceEntry, "studentId" | "kind" | "audience">, viewer: Viewer, allowedStudents: Set<number>) {
-  if (viewer.status !== "approved") return false;
+  if (!approvedSchoolRole(viewer)) return false;
   if (row.studentId === null) return row.kind === "course_offering" || (row.kind === "reference" && isStaff(viewer));
   return allowedStudents.has(row.studentId) && (isStaff(viewer) || row.audience === "student");
 }
