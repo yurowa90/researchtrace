@@ -1,5 +1,7 @@
 "use client";
 import * as React from "react";
+import { ReferenceVersionEditor } from "@/app/reference-version-editor";
+import type { GuidanceSave } from "@/app/guidance-view";
 import { Download, Upload, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { PortalData } from "@/lib/portal-types";
 import { referenceCategories, referenceKey, MAX_REFERENCE_SELECTION } from "@/lib/reference-materials";
 
-export function ReferenceMaterialsView({data,busy,onAction,onUploaded}:{data:PortalData;busy:boolean;onAction:(body:Record<string,unknown>)=>Promise<unknown>;onUploaded:()=>Promise<void>}) {
+export function ReferenceMaterialsView({data,busy,onAction,onUploaded,onGuidanceSave}:{data:PortalData;busy:boolean;onAction:(body:Record<string,unknown>)=>Promise<unknown>;onUploaded:()=>Promise<void>;onGuidanceSave:GuidanceSave}) {
   const [query,setQuery]=React.useState(""),[showArchived,setShowArchived]=React.useState(false),[uploading,setUploading]=React.useState(false),[error,setError]=React.useState("");
   const [selected,setSelected]=React.useState(data.selectedReferenceMaterialIds);
   const signature=data.selectedReferenceMaterialIds.join(",");
@@ -30,6 +32,6 @@ export function ReferenceMaterialsView({data,busy,onAction,onUploaded}:{data:Por
     <div className="flex flex-wrap items-center gap-3"><Search className="size-4"/><Input className="min-w-52 flex-1 bg-white" aria-label="대학·학년도·자료 검색" placeholder="대학, 전형, 학년도, 제목 검색" value={query} onChange={e=>setQuery(e.target.value)}/><label className="flex items-center gap-2 text-sm"><Checkbox checked={showArchived} onCheckedChange={value=>setShowArchived(value===true)}/>보관한 자료 표시</label></div>
     {error&&<p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
     {!materials.length&&<p className="rounded-xl border bg-white p-6 text-[#65768b]">{query?"검색 조건에 맞는 자료가 없습니다.":"등록된 공용 평가 자료가 없습니다. 관리자가 자료를 등록하면 여기에서 선택할 수 있습니다."}</p>}
-    {materials.map(row=><Card key={row.id}><CardContent className="flex items-start gap-3 p-5"><Checkbox className="mt-1" aria-label={`${row.title} 선택`} checked={selected.includes(row.id)} disabled={busy||uploading||row.status!=="active"} onCheckedChange={value=>toggle(row.id,value===true)}/><div className="min-w-0 flex-1"><h2 className="break-words font-bold">{row.title}</h2><p className="mt-1 text-sm text-[#65768b]">{row.institution||"공통 자료"} · {row.admissionsYear?`${row.admissionsYear}학년도`:"학년도 공통"} · {row.admissionTrack||"전형 공통"}</p><div className="mt-2 flex flex-wrap gap-2"><Badge variant="outline">{referenceKey(row.id)}</Badge><Badge variant="outline">{referenceCategories[row.category]}</Badge>{row.status==="archived"&&<Badge variant="outline">보관 자료</Badge>}</div>{row.note&&<p className="mt-3 text-sm leading-6">{row.note}</p>}<div className="mt-3 flex flex-wrap gap-2"><Button asChild variant="outline" size="sm"><a href={`/api/reference-materials/${row.id}`}><Download/>원문 받기</a></Button>{isAdmin&&<Button variant="ghost" size="sm" disabled={busy||uploading} onClick={async()=>{try{await onAction({action:"setReferenceStatus",materialId:row.id,status:row.status==="active"?"archived":"active"});}catch(e){setError(e instanceof Error?e.message:"상태를 변경하지 못했습니다.");}}}>{row.status==="active"?"이전 자료로 보관":"사용 자료로 복원"}</Button>}</div></div></CardContent></Card>)}
+    {materials.map(row=><Card key={row.id}><CardContent className="flex items-start gap-3 p-5"><Checkbox className="mt-1" aria-label={`${row.title} 선택`} checked={selected.includes(row.id)} disabled={busy||uploading||row.status!=="active"} onCheckedChange={value=>toggle(row.id,value===true)}/><div className="min-w-0 flex-1"><h2 className="break-words font-bold">{row.title}</h2><p className="mt-1 text-sm text-[#65768b]">{row.institution||"공통 자료"} · {row.admissionsYear?`${row.admissionsYear}학년도`:"학년도 공통"} · {row.admissionTrack||"전형 공통"}</p><div className="mt-2 flex flex-wrap gap-2"><Badge variant="outline">{referenceKey(row.id)}</Badge><Badge variant="outline">{referenceCategories[row.category]}</Badge>{row.status==="archived"&&<Badge variant="outline">보관 자료</Badge>}</div><ReferenceVersionEditor data={data} material={row} busy={busy} onSave={onGuidanceSave}/>{row.note&&<p className="mt-3 text-sm leading-6">{row.note}</p>}<div className="mt-3 flex flex-wrap gap-2"><Button asChild variant="outline" size="sm"><a href={`/api/reference-materials/${row.id}`}><Download/>원문 받기</a></Button>{isAdmin&&<Button variant="ghost" size="sm" disabled={busy||uploading} onClick={async()=>{try{await onAction({action:"setReferenceStatus",materialId:row.id,status:row.status==="active"?"archived":"active"});}catch(e){setError(e instanceof Error?e.message:"상태를 변경하지 못했습니다.");}}}>{row.status==="active"?"이전 자료로 보관":"사용 자료로 복원"}</Button>}</div></div></CardContent></Card>)}
   </div>;
 }

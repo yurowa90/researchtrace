@@ -1,3 +1,6 @@
+import { latestGuidance, decodeGuidance } from "@/lib/guidance";
+import { hydrateProfileDetails, profileEvidenceIssues } from "@/lib/profile-evidence";
+import { guidanceFromState } from "@/lib/guidance-store";
 import type { Viewer } from "@/lib/data";
 import type { PortalData } from "@/lib/portal-types";
 import { insertRow, type SchoolState } from "@/lib/school-tables";
@@ -69,7 +72,8 @@ export function googlePortalData(state: SchoolState, givenViewer: Viewer): Porta
   const threads = t.inquiryThreads.filter(row => studentIds.has(row.studentId)), threadIds = new Set(threads.map(row => row.id));
   // The legacy format stores numeric selection IDs; accept both representations.
   const selected = parsedArray(t.referenceSelections.find(row => row.userId === viewer.id)?.materialIdsJson ?? "[]").map(Number);
-  return {
+  const data = hydrateProfileDetails({
+    guidance: [], referenceChecks: [], appliedCriteria: [],
     viewer, classes, students, subjects: t.subjects.filter(row => classIds.has(row.classId)).sort((a,b)=>a.sortOrder-b.sortOrder), activities, threads,
     fingerprints: t.fingerprints.filter(row => activityIds.has(row.activityId)).map(row => ({ ...row, keywords: strings(row.keywordsJson), methods: strings(row.methodsJson), evidence: strings(row.evidenceJson), competencies: strings(row.competenciesJson), questions: strings(row.questionsJson), subjectLinks: strings(row.subjectLinksJson) })),
     threadActivities: t.threadActivities.filter(row => threadIds.has(row.threadId)).sort((a,b)=>a.sequence-b.sequence),
@@ -90,7 +94,8 @@ export function googlePortalData(state: SchoolState, givenViewer: Viewer): Porta
     competencyEvaluations: t.competencyEvaluations.filter(row=>snapshotIds.has(row.snapshotId)).sort((a,b)=>a.sortOrder-b.sortOrder).map(row=>({...row,evidenceRefs:strings(row.evidenceRefsJson),strengths:strings(row.strengthsJson),gaps:strings(row.gapsJson),nextActions:strings(row.nextActionsJson)})),
     pendingUsers: staff ? t.users.filter(row=>row.status==="pending" && (viewer.role==="admin" || students.some(s=>s.email?.toLowerCase()===row.email.toLowerCase()))).map(({id,email,displayName,createdAt})=>({id,email,displayName,createdAt})) : [],
     staffUsers: approved && viewer.role==="admin" ? t.users.filter(row=>row.status==="approved" && row.role!=="student").map(({id,email,displayName,role})=>({id,email,displayName,role:role as "admin"|"teacher"})) : [],
-  };
+  } as PortalData, snapshots.filter(row=>row.isActive));
+  return {...data, ...guidanceFromState(state,viewer,data)};
 }
 export async function googleAction(givenViewer: Viewer, body: Record<string, unknown>) {
   const state = await readGoogleState();
@@ -205,7 +210,7 @@ function importGoogleProfile(state: SchoolState, viewer: Viewer, body: Record<st
   if(p.studentReference&&(p.studentReference.name!==student.name||p.studentReference.studentNumber!==student.studentNumber)) throw new Error("Work 결과의 학번·이름이 선택한 학생과 다릅니다.");
   if(t.profileSnapshots.some(row=>row.studentId===studentId&&row.versionLabel===p.versionLabel)) throw new Error("이미 저장된 버전명입니다.");
   const records=t.studentRecords.filter(row=>row.studentId===studentId);
-  const issues=[...profileCoverageIssues(p,classroom.grade,records,student.isExample),...profileReferenceIssues(p),...libraryReferenceIssues(p,t.referenceMaterials)]; if(issues.length) throw new Error(issues[0]);
+  const issues=[...profileCoverageIssues(p,classroom.grade,records,student.isExample),...profileReferenceIssues(p),...profileEvidenceIssues(p,records.map(r=>({...r,coverage:recordCoverage(r)})),studentId),...libraryReferenceIssues(p,t.referenceMaterials,latestGuidance(t.guidanceEntries).map(decodeGuidance))]; if(issues.length) throw new Error(issues[0]);
   t.profileSnapshots.filter(row=>row.studentId===studentId).forEach(row=>row.isActive=false);
   const snapshot=insertRow(state,"profileSnapshots",{studentId,createdBy:viewer.id,versionLabel:p.versionLabel,schemaVersion:p.schemaVersion,oneLineProfile:p.overview.oneLineProfile,narrative:p.overview.narrative,strengthsJson:JSON.stringify(p.overview.strengths),cautionsJson:JSON.stringify(p.overview.cautions),coursePattern:p.overview.coursePattern,sourceYearsJson:JSON.stringify(p.sourceYears.map(String)),rawJson:JSON.stringify(p),isActive:true});
   const base={snapshotId:snapshot.id,studentId}, json=JSON.stringify;
@@ -214,11 +219,11 @@ function importGoogleProfile(state: SchoolState, viewer: Viewer, body: Record<st
   p.ontology.nodes.forEach(x=>insertRow(state,"ontologyNodes",{...base,nodeKey:x.id,nodeType:x.type,label:x.label,description:x.description,weight:x.weight,evidenceRefsJson:json(x.evidenceRefs)}));
   p.ontology.edges.forEach(x=>insertRow(state,"ontologyEdges",{...base,sourceKey:x.source,targetKey:x.target,relation:x.relation,description:x.description,weight:x.weight}));
   p.wikiPages.forEach((x,i)=>insertRow(state,"wikiPages",{...base,slug:x.slug,pageType:x.type,title:x.title,summary:x.summary,bodyMarkdown:x.bodyMarkdown,keywordsJson:json(x.keywords),linkedNodeKeysJson:json(x.linkedNodeIds),sortOrder:i}));
-  p.academicAnalysis.courses.forEach((x,i)=>{const {evidence,...rest}=x;insertRow(state,"academicCourseRecords",{...base,...rest,evidenceText:evidence,sortOrder:i});});
+  p.academicAnalysis.courses.forEach((x,i)=>{const {evidence,...rest}=x;insertRow(state,"academicCourseRecords",{...base,...rest,credits:x.credits??0,evidenceText:evidence,sortOrder:i});});
   p.academicAnalysis.trends.forEach(x=>{const {points,evidenceRefs,...rest}=x;insertRow(state,"academicTrends",{...base,...rest,pointsJson:json(points),evidenceRefsJson:json(evidenceRefs)});});
-  p.academicAnalysis.creditSummary.forEach(x=>{const {evidenceRefs,...rest}=x;insertRow(state,"creditSummaries",{...base,...rest,evidenceRefsJson:json(evidenceRefs)});});
+  p.academicAnalysis.creditSummary.forEach(x=>{const {evidenceRefs,...rest}=x;insertRow(state,"creditSummaries",{...base,...rest,completedCredits:x.completedCredits??0,selectedCredits:x.selectedCredits??0,plannedCredits:x.plannedCredits??0,evidenceRefsJson:json(evidenceRefs)});});
   p.evaluationAnalysis.references.forEach(x=>{const {id,...rest}=x;insertRow(state,"evaluationReferences",{...base,...rest,sourceKey:id});});
-  p.evaluationAnalysis.competencies.forEach((x,i)=>{const {sourceId,evidenceRefs,strengths,gaps,nextActions,...rest}=x;insertRow(state,"competencyEvaluations",{...base,...rest,sourceKey:sourceId,evidenceRefsJson:json(evidenceRefs),strengthsJson:json(strengths),gapsJson:json(gaps),nextActionsJson:json(nextActions),sortOrder:i});});
+  p.evaluationAnalysis.competencies.forEach((x,i)=>{const {sourceId,evidenceRefs,strengths,gaps,nextActions,...rest}=x;insertRow(state,"competencyEvaluations",{...base,...rest,score:x.score??0,sourceKey:sourceId,evidenceRefsJson:json(evidenceRefs),strengthsJson:json(strengths),gapsJson:json(gaps),nextActionsJson:json(nextActions),sortOrder:i});});
   records.filter(row=>recordCoverage(row).every(x=>p.sourceYears.includes(x.schoolYear))).forEach(row=>row.processingStatus="reflected");
   return {ok:true,snapshot};
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { getPortalData, performPortalAction } from "../lib/data.ts";
@@ -16,7 +16,7 @@ class MemoryD1 {
   failBatchAt = -1;
   constructor() {
     this.sql.exec("PRAGMA foreign_keys=ON");
-    for (const migration of ["0000_chunky_maximus.sql", "0001_harsh_ultron.sql", "0002_tidy_gabe_jones.sql", "0003_ancient_silverclaw.sql", "0004_google_storage_freeze.sql"]) this.sql.exec(readFileSync(new URL(`../drizzle/${migration}`, import.meta.url), "utf8"));
+    for (const migration of readdirSync(new URL("../drizzle/", import.meta.url)).filter(n=>n.endsWith(".sql")).sort()) this.sql.exec(readFileSync(new URL(`../drizzle/${migration}`, import.meta.url), "utf8"));
   }
   prepare(query) {
     const database = this;
@@ -205,4 +205,44 @@ test("legacy imports accept combined current-year records and validate shared so
   assert.equal((await getPortalData(admin)).profileSnapshots[0].sourceYears.length,2);
   await assert.rejects(performPortalAction(teacher,{action:"setReferenceStatus",materialId:1,status:"archived"}),/관리자/);
   db.sql.close();
+});
+
+// New guidance writes exercise the real schema and authorization service.
+const {saveGuidance,guidanceHistory}=await import('../lib/guidance-store.ts');
+const {saveRecord}=await import('../lib/file-storage.ts');
+test('guidance revisions preserve prior evidence, scope and teacher confirmation',async()=>{
+ const db=setup();await add(db,1);const s=db.sql.prepare('SELECT * FROM students').get();
+ db.sql.exec("INSERT INTO users(id,auth_user_id,email,display_name,role,status) VALUES(3,'student','test1@example.test','가상','student','approved');UPDATE students SET user_id=3;");
+ const pupil={id:3,authUserId:'student',email:'test1@example.test',displayName:'가상',role:'student',status:'approved'};
+ const first=await saveGuidance(teacher,{kind:'action',studentId:s.id,payload:{title:'한 개의 주장과 근거를 설명하기'}});
+ const body={kind:'action',studentId:s.id,entityKey:first.entry.entityKey,expectedRevision:1};
+ await assert.rejects(()=>saveGuidance(pupil,{...body,intent:'review',payload:{status:'confirmed',feedback:'위조'}}),/교사/);
+ await assert.rejects(()=>saveGuidance(teacher,{...body,intent:'review',payload:{status:'confirmed',feedback:'아직 응답 없음'}}),/실행 결과/);
+ await assert.rejects(()=>saveGuidance(pupil,{...body,payload:{title:'교사가 쓴 내용을 바꿈'}}),/실행 결과/);
+ await saveGuidance(pupil,{...body,intent:'submit',payload:{response:'표 1을 비교한 결과와 설명을 제출합니다.'}});
+ await assert.rejects(()=>saveGuidance(pupil,{...body,intent:'submit',payload:{response:'오래된 창'}}),/먼저 저장/);
+ await saveGuidance(teacher,{...body,expectedRevision:2,intent:'review',payload:{status:'confirmed',feedback:'근거와 설명을 대조함.'}});
+ const history=await guidanceHistory(pupil,first.entry.entityKey);assert.equal(history.length,3);assert.equal(history[0].payload.response,'');assert.equal(history[2].payload.reviewedBy,teacher.displayName);
+ await assert.rejects(()=>saveGuidance(pupil,{...body,expectedRevision:3,payload:{title:'완료 후 변경'}}),/보존/);
+ assert.equal((await getPortalData(pupil)).guidance.length,1);
+});
+test('private notes, foreign records and another class stay inaccessible',async()=>{
+ const db=setup();await add(db,1);await add(db,1,'other',2);const [a,b]=db.sql.prepare('SELECT id FROM students ORDER BY id').all();
+ db.sql.exec("INSERT INTO users(id,auth_user_id,email,display_name,role,status) VALUES(3,'student','test1@example.test','가상','student','approved');UPDATE students SET user_id=3 WHERE id=1;");
+ const pupil={id:3,role:'student',status:'approved',displayName:'가상'};
+ const note=await saveGuidance(teacher,{kind:'observation',studentId:a.id,audience:'staff',payload:{title:'개별 상담 메모',text:'교사가 별도로 확인할 내용'}});
+ assert.equal((await getPortalData(pupil)).guidance.length,0);
+ await assert.rejects(()=>guidanceHistory(pupil,note.entry.entityKey),/접근/);
+ await assert.rejects(()=>saveGuidance(teacher,{kind:'action',studentId:b.id,payload:{title:'다른 학급'}}),/접근/);
+ await assert.rejects(()=>saveGuidance(pupil,{kind:'question',studentId:a.id,entityKey:note.entry.entityKey,expectedRevision:1,payload:{title:'잘못된 접근'}}),/교사|접근/);
+ await assert.rejects(()=>saveGuidance(teacher,{kind:'question',studentId:a.id,payload:{title:'다른 원본',recordId:999}}),/원본/);
+ await saveGuidance(teacher,{kind:'question',studentId:a.id,payload:{title:'첫 질문',text:'실제 관찰'}});
+ assert.equal((await getPortalData(pupil)).guidance.length,1);
+});
+test('D1 retries reuse immutable originals and class transfer keeps student identity',async()=>{
+ const db=setup();await add(db,1);const s=db.sql.prepare('SELECT * FROM students').get();
+ const values={studentId:s.id,ownerUserId:teacher.id,schoolYear:2025,recordGrade:1,coverageJson:'[{"grade":1,"schoolYear":2025}]',objectKey:'student-records/test-content',originalName:'original.pdf',contentType:'application/pdf',sizeBytes:20};
+ const a=await saveRecord(teacher,values),b=await saveRecord(teacher,values);assert.equal(a.id,b.id);assert.equal(db.count('student_records'),1);
+ await saveGuidance(admin,{kind:'enrollment',studentId:s.id,payload:{title:'진급 이동',enrollment:{fromClassId:1,toClassId:2,previousNumber:s.student_number,studentNumber:'30101'}}});
+ assert.equal(db.count('students'),1);assert.equal((await getPortalData(teacher)).students.length,0);assert.equal((await getPortalData(admin)).records[0].studentId,s.id);
 });

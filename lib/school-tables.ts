@@ -3,6 +3,7 @@ import * as schema from "@/db/schema";
 
 // Explicit allowlist: connection secrets are deliberately excluded from exports.
 export const schoolTables = {
+  guidanceEntries: schema.guidanceEntries,
   users: schema.users, classes: schema.classes, students: schema.students,
   subjects: schema.subjects, activities: schema.activities, fingerprints: schema.fingerprints,
   activityFiles: schema.activityFiles, inquiryThreads: schema.inquiryThreads,
@@ -17,7 +18,7 @@ export const schoolTables = {
 };
 export type SchoolTable = keyof typeof schoolTables;
 export type SchoolRows = { [K in SchoolTable]: (typeof schoolTables)[K]["$inferSelect"][] };
-export type SchoolState = { revision: number; tables: SchoolRows };
+export type SchoolState = { revision: number; tables: SchoolRows; sourceTables?: string[] };
 export const tableNames = Object.keys(schoolTables) as SchoolTable[];
 export const tableColumns = Object.fromEntries(tableNames.map((name) => [name, Object.keys(getTableColumns(schoolTables[name]))])) as Record<SchoolTable, string[]>;
 

@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getDb } from "@/db";
 import { activityFiles, referenceMaterials, studentRecords } from "@/db/schema";
@@ -38,10 +39,11 @@ export async function cleanupFailedFile(key: string) {
 }
 export async function saveRecord(viewer: Viewer, values: typeof studentRecords.$inferInsert) {
   await assertStorageWritable();
-  if (!(await googleEnabled())) { const [row] = await getDb().insert(studentRecords).values(values).returning(); return row; }
+  if (!(await googleEnabled())) { const db=getDb();const [inserted] = await db.insert(studentRecords).values(values).onConflictDoNothing({target:studentRecords.objectKey}).returning();if(inserted)return inserted;const [prior]=await db.select().from(studentRecords).where(eq(studentRecords.objectKey,values.objectKey));if(!prior||prior.studentId!==values.studentId)throw new Error("원본 저장을 확인하지 못했습니다.");return prior; }
   const state=await readGoogleState(), current=currentGoogleViewer(state,viewer);
   if(current.status!=="approved" || current.role==="student") throw new Error("교사 권한이 필요합니다.");
   googleStudentAccess(state,current,values.studentId);
+  const prior=state.tables.studentRecords.find(r=>r.objectKey===values.objectKey&&r.studentId===values.studentId);if(prior)return prior;
   const row=insertRow(state,"studentRecords",values); await commitGoogleState(state); return row;
 }
 export async function saveReference(viewer: Viewer, values: typeof referenceMaterials.$inferInsert) {

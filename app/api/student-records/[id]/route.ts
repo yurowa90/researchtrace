@@ -13,10 +13,13 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const record = await assertStudentRecordAccess(viewer, recordId);
     const object = await getStoredFile(record.objectKey);
     if (!object) return Response.json({ error: "파일을 찾을 수 없습니다." }, { status: 404 });
+    const inline = new URL(_request.url).searchParams.get("inline") === "1" && /\.pdf$/i.test(record.originalName);
     return new Response(object.body, {
       headers: {
-        "Content-Type": record.contentType || "application/octet-stream",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(record.originalName)}`,
+        "Content-Type": inline ? "application/pdf" : record.contentType || "application/octet-stream",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox",
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(record.originalName)}`,
         "Cache-Control": "private, no-store",
       },
     });

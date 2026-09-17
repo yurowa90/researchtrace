@@ -19,7 +19,18 @@ function setupTrace() {
   });
   const file = DriveApp.getFileById(TRACE_CONFIG.spreadsheetId);
   if (file.getOwner().getEmail().toLowerCase() !== owner || file.getSharingAccess() !== DriveApp.Access.PRIVATE) throw new Error('데이터 시트의 소유자·공유를 확인하세요.');
-  p.setProperty('TRACE_CONFIG', JSON.stringify(TRACE_CONFIG));
+  const lock=LockService.getScriptLock();lock.waitLock(20000);
+  try {
+    const previous=JSON.parse(p.getProperty('TRACE_CONFIG')||'null');
+    if(previous){
+      if(previous.spreadsheetId!==TRACE_CONFIG.spreadsheetId)throw new Error('기존 데이터 시트가 다릅니다.');
+      Object.keys(previous.columns).forEach(name=>{if(JSON.stringify(previous.columns[name])!==JSON.stringify(TRACE_CONFIG.columns[name]))throw new Error('기존 열은 변경할 수 없습니다: '+name);});
+      readState(previous);
+    }
+    installMissingSheets(TRACE_CONFIG);
+    p.setProperty('TRACE_CONFIG', JSON.stringify(TRACE_CONFIG));
+    readState(TRACE_CONFIG);
+  } finally { if(lock.hasLock())lock.releaseLock(); }
   return '설정 완료. 웹 앱으로 배포하고 /exec 주소를 TRACE에 입력하세요.';
 }
 function doGet() { return jsonResponse({ ok: false, code: 'SIGNED_POST_REQUIRED' }); }
@@ -62,7 +73,7 @@ function sheetsApi(config, path, method, body) {
 }
 function digest(text) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8).map(x => ('0' + (x & 255).toString(16)).slice(-2)).join(''); }
 function tableDigest(tables, columns) {
-  return digest(JSON.stringify(Object.keys(columns).sort().map(name => [name, (tables[name] || []).map(row => columns[name].map(key => row[key] === undefined ? null : row[key]))])));
+  return digest(JSON.stringify(Object.keys(columns).filter(name=>name!=='guidanceEntries'||(tables[name]||[]).length>0).sort().map(name => [name, (tables[name] || []).map(row => columns[name].map(key => row[key] === undefined ? null : row[key]))])));
 }
 function checkedResultFile(config, id) {
   const file = DriveApp.getFileById(id), parents = file.getParents(); let inside = false;
@@ -147,7 +158,8 @@ function putFile(config, data) {
   return { sizeBytes: bytes.length, sha256: hash };
 }
 function dispatch(config, operation, data) {
-  if (operation === 'health') { readState(config); return { version: 1, spreadsheetId: config.spreadsheetId, folderId: config.folderId, ownerEmail: Session.getEffectiveUser().getEmail() }; }
+  if (operation === 'health') { readState(config); return { version: 1, spreadsheetId: config.spreadsheetId, folderId: config.folderId, ownerEmail: Session.getEffectiveUser().getEmail(), schemaTables:Object.keys(config.columns) }; }
+  if (operation === 'backup') return backupState(config);
   if (operation === 'read') return readState(config);
   if (operation === 'commit') return writeState(config, data);
   if (operation === 'putFile') return putFile(config, data);
@@ -165,4 +177,31 @@ function dispatch(config, operation, data) {
     return result;
   }
   fail('UNKNOWN_OPERATION');
+}
+
+// Existing headers and rows remain intact. Only absent, allowlisted tabs are added.
+function installMissingSheets(config) {
+  const sheets=sheetsApi(config,'?fields=sheets.properties').sheets.map(s=>s.properties);
+  const headers=Object.assign({},config.columns,{_meta:['key','value'],_files:['objectKey','driveId','sha256','sizeBytes','originalName','contentType']});
+  const requests=[];let id=Math.max(0,...sheets.map(s=>s.sheetId))+1;
+  Object.keys(headers).forEach(name=>{
+    const prior=sheets.find(s=>s.title===name);
+    if(prior){
+      const first=sheetsApi(config,'/values/'+encodeURIComponent("'"+name+"'!A1:Z1")).values;
+      if(JSON.stringify((first||[])[0])!==JSON.stringify(headers[name]))fail('INVALID_STATE');
+      return;
+    }
+    const sheetId=id++;
+    requests.push({addSheet:{properties:{sheetId:sheetId,title:name,gridProperties:{rowCount:1000,columnCount:26}}}});
+    requests.push({updateCells:{start:{sheetId:sheetId,rowIndex:0,columnIndex:0},rows:[{values:headers[name].map(v=>({userEnteredValue:{stringValue:v}}))}],fields:'userEnteredValue'}});
+  });
+  if(requests.length)sheetsApi(config,':batchUpdate','post',{requests:requests});
+}
+function backupState(config){
+  const state=readState(config),files=fileIndex(config).rows;
+  const body=JSON.stringify({format:'trace-private-backup-v1',createdAt:new Date().toISOString(),revision:state.revision,columns:config.columns,tables:state.tables,fileIndex:files,contentDigest:tableDigest(state.tables,config.columns)});
+  const folder=DriveApp.getFolderById(config.backupsFolderId);
+  if(folder.getSharingAccess()!==DriveApp.Access.PRIVATE)fail('INVALID_STATE');
+  const file=folder.createFile(Utilities.newBlob(body,'application/json','TRACE-data-backup-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json'));
+  return {url:file.getUrl(),revision:state.revision};
 }

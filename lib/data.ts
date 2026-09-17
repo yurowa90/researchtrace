@@ -1,3 +1,6 @@
+import { hydrateProfileDetails, profileEvidenceIssues } from "@/lib/profile-evidence";
+import { guidanceForPortal } from "@/lib/guidance-store";
+import type { PortalData } from "@/lib/portal-types";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
@@ -30,7 +33,7 @@ import { normalizeStudentRow, validateStudentRows, type BulkStudentRow } from "@
 import { buildStudentRegistrationBatch } from "@/lib/student-bulk-statements";
 import { profileReferenceIssues } from "@/lib/work-result";
 import { profileCoverageIssues, recordCoverage } from "@/lib/record-coverage";
-import { getReferenceLibrary, saveReferenceSelection, setReferenceStatus } from "@/lib/reference-library";
+import { getReferenceGuidance, getReferenceLibrary, saveReferenceSelection, setReferenceStatus } from "@/lib/reference-library";
 import { libraryReferenceIssues } from "@/lib/reference-materials";
 import { googleEnabled, getStorageConnection, assertStorageWritable, readGoogleState } from "@/lib/google-bridge";
 import { ensureGoogleViewer, googlePortalData, googleAction, googleStudentAccess, currentGoogleViewer } from "@/lib/google-school";
@@ -293,7 +296,7 @@ export async function getPortalData(viewer: Viewer) {
   const db = getDb();
   if (viewer.status !== "approved") {
     return {
-      viewer, classes: [], students: [], subjects: [], activities: [], fingerprints: [],
+      guidance: [], referenceChecks: [], appliedCriteria: [], viewer, classes: [], students: [], subjects: [], activities: [], fingerprints: [],
       threads: [], threadActivities: [], files: [], records: [], profileSnapshots: [],
       profileSections: [], researchKeywords: [], ontologyNodes: [], ontologyEdges: [],
       wikiPages: [], academicCourses: [], academicTrends: [], creditSummaries: [],
@@ -424,7 +427,9 @@ export async function getPortalData(viewer: Viewer) {
     ? await db.select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role }).from(users).where(and(eq(users.status, "approved"), inArray(users.role, ["admin", "teacher"]))).orderBy(asc(users.displayName))
     : [];
 
-  return {
+  const activeRawRows = activeSnapshotIds.length ? await db.select({id:profileSnapshots.id,rawJson:profileSnapshots.rawJson}).from(profileSnapshots).where(inArray(profileSnapshots.id, scopedSnapshotIds)) : [];
+  const data = hydrateProfileDetails({
+    guidance: [], referenceChecks: [], appliedCriteria: [],
     viewer,
     classes: classRows,
     students: studentRows,
@@ -479,7 +484,8 @@ export async function getPortalData(viewer: Viewer) {
     })),
     pendingUsers,
     staffUsers,
-  };
+  } as PortalData, activeRawRows);
+  return {...data, ...await guidanceForPortal(viewer, data)};
 }
 
 function requireStaff(viewer: Viewer) {
@@ -883,11 +889,11 @@ export async function performPortalAction(viewer: Viewer, body: Record<string, u
     const coverageIssues = profileCoverageIssues(profile, classroom.grade, uploaded, student.isExample);
     if (coverageIssues.length) throw new Error(coverageIssues[0]);
     const library = await getReferenceLibrary(viewer);
-    const libraryIssues = libraryReferenceIssues(profile, library.referenceMaterials);
+    const libraryIssues = libraryReferenceIssues(profile, library.referenceMaterials, await getReferenceGuidance(viewer));
     if (libraryIssues.length) throw new Error(libraryIssues[0]);
     const reflectedRecordIds = uploaded.filter((record) => recordCoverage(record).every((item) => profile.sourceYears.includes(item.schoolYear))).map((record) => record.id);
 
-    const referenceIssues = profileReferenceIssues(profile);
+    const referenceIssues = [...profileReferenceIssues(profile), ...profileEvidenceIssues(profile, uploaded.map(r=>({...r,coverage:recordCoverage(r)})), studentId)];
     if (referenceIssues.length) throw new Error(referenceIssues[0]);
 
     const [snapshot] = await db.insert(profileSnapshots).values({
@@ -937,7 +943,7 @@ export async function performPortalAction(viewer: Viewer, body: Record<string, u
       await insertChunked(profile.academicAnalysis.courses.map((item, index) => ({
       snapshotId: snapshot.id, studentId, schoolYear: item.schoolYear, gradeLevel: item.gradeLevel,
       semester: item.semester, subjectGroup: item.subjectGroup, subject: item.subject,
-      courseType: item.courseType, selectionStatus: item.selectionStatus, credits: item.credits,
+      courseType: item.courseType, selectionStatus: item.selectionStatus, credits: item.credits ?? 0,
       rawScore: item.rawScore, achievement: item.achievement, rankGrade: item.rankGrade,
       classAverage: item.classAverage, standardDeviation: item.standardDeviation,
       studentCount: item.studentCount, evidenceText: item.evidence, sortOrder: index,
@@ -949,8 +955,8 @@ export async function performPortalAction(viewer: Viewer, body: Record<string, u
       })), (rows) => db.insert(academicTrends).values(rows));
       await insertChunked(profile.academicAnalysis.creditSummary.map((item) => ({
       snapshotId: snapshot.id, studentId, subjectGroup: item.subjectGroup,
-      completedCredits: item.completedCredits, selectedCredits: item.selectedCredits,
-      plannedCredits: item.plannedCredits, note: item.note,
+      completedCredits: item.completedCredits ?? 0, selectedCredits: item.selectedCredits ?? 0,
+      plannedCredits: item.plannedCredits ?? 0, note: item.note,
       evidenceRefsJson: JSON.stringify(item.evidenceRefs),
       })), (rows) => db.insert(creditSummaries).values(rows));
       await insertChunked(profile.evaluationAnalysis.references.map((item) => ({
@@ -960,7 +966,7 @@ export async function performPortalAction(viewer: Viewer, body: Record<string, u
       })), (rows) => db.insert(evaluationReferences).values(rows));
       await insertChunked(profile.evaluationAnalysis.competencies.map((item, index) => ({
       snapshotId: snapshot.id, studentId, sourceKey: item.sourceId, competency: item.competency,
-      score: item.score, level: item.level, summary: item.summary,
+      score: item.score ?? 0, level: item.level, summary: item.summary,
       evidenceRefsJson: JSON.stringify(item.evidenceRefs), strengthsJson: JSON.stringify(item.strengths),
       gapsJson: JSON.stringify(item.gaps), nextActionsJson: JSON.stringify(item.nextActions),
       caveat: item.caveat, sortOrder: index,

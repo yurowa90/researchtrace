@@ -11,6 +11,26 @@ const createdAt = text("created_at")
   .notNull()
   .default(sql`(CURRENT_TIMESTAMP)`);
 
+// Append-only revisions. The unique key makes concurrent edits fail instead of
+// silently overwriting a student's response or a teacher's feedback.
+export const guidanceEntries = sqliteTable("guidance_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  entityKey: text("entity_key").notNull(),
+  revision: integer("revision").notNull(),
+  kind: text("kind").notNull(),
+  studentId: integer("student_id").references(() => students.id, { onDelete: "restrict" }),
+  audience: text("audience", { enum: ["student", "staff"] }).notNull().default("student"),
+  includeInWork: integer("include_in_work", { mode: "boolean" }).notNull().default(false),
+  payloadJson: text("payload_json").notNull(),
+  createdBy: integer("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  actorName: text("actor_name").notNull(),
+  actorRole: text("actor_role").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  uniqueIndex("idx_guidance_entity_revision").on(table.entityKey, table.revision),
+  index("idx_guidance_student_kind").on(table.studentId, table.kind),
+]);
+
 // Server connection settings only. Never export this table to Sheets or clients.
 export const storageConnection = sqliteTable("storage_connection", {
   id: integer("id").primaryKey(),

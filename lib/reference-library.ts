@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { latestGuidance, decodeGuidance } from "@/lib/guidance";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
-import { referenceMaterials, referenceSelections } from "@/db/schema";
+import { referenceMaterials, referenceSelections, guidanceEntries } from "@/db/schema";
 import type { Viewer } from "@/lib/data";
 import { googleEnabled, readGoogleState } from "@/lib/google-bridge";
 import { currentGoogleViewer, googlePortalData } from "@/lib/google-school";
@@ -44,4 +45,10 @@ export async function getReferenceRows(viewer: Viewer, ids: number[]) {
   if (!referenceRoleAllowed(viewer)) throw new Error("교사 또는 관리자 권한이 필요합니다.");
   if (await googleEnabled()) { const state=await readGoogleState(); if(!referenceRoleAllowed(currentGoogleViewer(state,viewer))) throw new Error("접근 권한이 없습니다."); return state.tables.referenceMaterials.filter(row=>ids.includes(row.id)); }
   return ids.length ? getDb().select().from(referenceMaterials).where(inArray(referenceMaterials.id,ids)) : [];
+}
+
+export async function getReferenceGuidance(viewer: Viewer) {
+  if(!referenceRoleAllowed(viewer))throw new Error("교사 권한이 필요합니다.");
+  if(await googleEnabled()){const state=await readGoogleState();if(!referenceRoleAllowed(currentGoogleViewer(state,viewer)))throw new Error("교사 권한이 필요합니다.");return latestGuidance(state.tables.guidanceEntries).filter(e=>e.kind==="reference").map(decodeGuidance);}
+  return latestGuidance(await getDb().select().from(guidanceEntries).where(and(isNull(guidanceEntries.studentId),eq(guidanceEntries.kind,"reference")))).map(decodeGuidance);
 }

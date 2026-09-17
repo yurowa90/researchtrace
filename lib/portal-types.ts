@@ -1,3 +1,4 @@
+import type { AppliedCriterion, GuidanceEntry, ReferenceCheck } from "@/lib/guidance";
 export type Viewer = {
   id: number;
   email: string;
@@ -71,6 +72,9 @@ export type InquiryThread = {
 
 export type PortalData = {
   viewer: Viewer;
+  guidance: GuidanceEntry[];
+  referenceChecks: ReferenceCheck[];
+  appliedCriteria: AppliedCriterion[];
   classes: Classroom[];
   students: Student[];
   subjects: Subject[];
@@ -123,6 +127,7 @@ export type ProfileSnapshot = {
   studentId: number;
   versionLabel: string;
   schemaVersion: string;
+  analysisContext?: { asOf?: string; admissionsYear: number | null; curriculum: string; gradingSystem: string; limitations: string[] };
   oneLineProfile: string;
   narrative: string;
   strengths: string[];
@@ -138,6 +143,11 @@ export type ProfileSection = {
   snapshotId: number;
   studentId: number;
   sectionType: string;
+  sectionKey?: string;
+  sourceState?: "recorded" | "self_report" | "interpretation" | "planned" | "unknown" | "not_applicable";
+  recordId?: number | null;
+  page?: number | null;
+  sourceLocation?: string;
   schoolYear: number;
   subject: string;
   title: string;
@@ -177,6 +187,8 @@ export type OntologyEdge = {
   studentId: number;
   sourceKey: string;
   targetKey: string;
+  evidenceRefs?: string[];
+  sourceState?: string;
   relation: string;
   description: string;
   weight: number;
@@ -206,7 +218,9 @@ export type AcademicCourse = {
   subject: string;
   courseType: string;
   selectionStatus: "completed" | "selected" | "planned";
-  credits: number;
+  credits: number | null;
+  gradingSystem?: "five" | "nine" | "achievement" | "unknown";
+  evidenceRefs?: string[];
   rawScore: string;
   achievement: string;
   rankGrade: string;
@@ -233,9 +247,9 @@ export type CreditSummary = {
   snapshotId: number;
   studentId: number;
   subjectGroup: string;
-  completedCredits: number;
-  selectedCredits: number;
-  plannedCredits: number;
+  completedCredits: number | null;
+  selectedCredits: number | null;
+  plannedCredits: number | null;
   note: string;
   evidenceRefs: string[];
 };
@@ -245,6 +259,9 @@ export type EvaluationReference = {
   snapshotId: number;
   studentId: number;
   sourceKey: string;
+  sha256?: string;
+  materialRevision?: number;
+  department?: string;
   title: string;
   institution: string;
   admissionsYear: number | null;
@@ -259,7 +276,9 @@ export type CompetencyEvaluation = {
   studentId: number;
   sourceKey: string;
   competency: string;
-  score: number;
+  score: number | null;
+  scoreMethod?: { rubric: string; sourcePage: number; maximum: number };
+  evidenceState?: "documented" | "partial" | "missing" | "not_applicable";
   level: string;
   summary: string;
   evidenceRefs: string[];
@@ -270,6 +289,8 @@ export type CompetencyEvaluation = {
 };
 
 export type ViewId =
+  | "guidance"
+  | "planning"
   | "overview"
   | "students"
   | "records"

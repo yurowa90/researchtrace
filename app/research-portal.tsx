@@ -25,6 +25,8 @@ import { WorkImportView } from "@/app/work-import-view";
 import { StudentProfiles } from "@/app/student-profiles-view";
 import { RecordsView } from "@/app/student-records-view";
 import { ReferenceMaterialsView } from "@/app/reference-materials-view";
+import { GuidanceView } from "@/app/guidance-view";
+import { PlanningView } from "@/app/planning-view";
 import { StorageSettings } from "@/app/storage-settings";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Toaster } from "@/components/ui/sonner";
@@ -41,6 +43,8 @@ import {
 import type { PortalData, ViewId } from "@/lib/portal-types";
 
 const navItems: Array<{ id: ViewId; label: string; icon: LucideIcon; staffOnly?: boolean }> = [
+  { id: "guidance", label: "다음 행동·피드백", icon: CircleHelp },
+  { id: "planning", label: "진학·과목 계획", icon: GraduationCap },
   { id: "overview", label: "통합 현황", icon: LayoutDashboard },
   { id: "students", label: "학생 프로필", icon: Users },
   { id: "records", label: "학생부 원본", icon: FileText },
@@ -66,12 +70,14 @@ export function ResearchPortal() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [view, setView] = React.useState<ViewId>("overview");
+  React.useEffect(() => { window.scrollTo({ top: 0, behavior: "auto" }); }, [view]);
   const [query, setQuery] = React.useState("");
   const [classId, setClassId] = React.useState<number | null>(null);
   const [selectedStudentId, setSelectedStudentId] = React.useState<number | null>(null);
   const [studentDialog, setStudentDialog] = React.useState(false);
   const [bulkStudentDialog, setBulkStudentDialog] = React.useState(false);
   const [classDialog, setClassDialog] = React.useState(false);
+  const guidanceLock = React.useRef(false);
   const [busy, setBusy] = React.useState(false);
   const [showExamples, setShowExamples] = React.useState(false);
   const dataRef = React.useRef<PortalData | null>(null);
@@ -135,10 +141,18 @@ export function ResearchPortal() {
   const openStudent = (id: number, destination: ViewId = "fingerprint") => { setSelectedStudentId(id); setView(destination); };
 
   const guideProps = { data, students: visibleStudents, onNavigate: setView, onAddClass: () => setClassDialog(true), onAddStudents: () => setBulkStudentDialog(true) };
+  const saveGuidance = async (payload: Record<string,unknown>) => {
+    if (busy || guidanceLock.current) throw new Error("저장 중입니다. 잠시 후 다시 시도하세요.");
+    guidanceLock.current=true;setBusy(true);
+    try { const response=await fetch("/api/guidance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const result=await response.json() as {error?:string};if(!response.ok)throw new Error(result.error??"저장하지 못했습니다.");await load();toast.success("기록과 변경 이력을 저장했습니다."); }
+    finally {guidanceLock.current=false;setBusy(false);}
+  };
   const content: Record<ViewId, React.ReactNode> = {
-    references: <ReferenceMaterialsView data={data} busy={busy} onUploaded={load} onAction={(payload)=>execute(payload,"공용 평가 자료 설정을 저장했습니다.")} />,
+    guidance: <GuidanceView data={data} students={visibleStudents} selectedStudentId={selectedVisibleId} onSelect={setSelectedStudentId} busy={busy} onSave={saveGuidance}/>,
+    planning: <PlanningView data={data} students={visibleStudents} selectedStudentId={selectedVisibleId} onSelect={setSelectedStudentId} busy={busy} onSave={saveGuidance}/>,
+    references: <ReferenceMaterialsView data={data} busy={busy} onGuidanceSave={saveGuidance} onUploaded={load} onAction={(payload)=>execute(payload,"공용 평가 자료 설정을 저장했습니다.")} />,
     guide: <UsageGuide {...guideProps} />,
-    overview: <><QuickStart {...guideProps} /><RecordOverview data={data} students={visibleStudents} staff={staff} admin={admin} onSelect={(id) => openStudent(id)} onNavigate={setView} /></>,
+    overview: <><div className="mb-5 rounded-2xl border bg-white p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{staff ? "학급 지도와 피드백" : "내가 이어갈 질문과 다음 행동"}</h2><Button onClick={()=>setView("guidance")}>다음 행동·피드백 열기</Button></div><p className="mt-3 text-sm text-[#65768b]">질문과 실행 결과를 남기고 교사의 피드백을 확인합니다. 근거를 확인할 자료는 연구지문에서 원문과 대조할 수 있습니다.</p></div><QuickStart {...guideProps} /><RecordOverview data={data} students={visibleStudents} staff={staff} admin={admin} onSelect={(id) => openStudent(id)} onNavigate={setView} /></>,
     students: <StudentProfiles data={data} students={visibleStudents} query={query} staff={staff} onOpen={openStudent} onClearQuery={() => setQuery("")} />,
     records: <RecordsView key={currentClass?.id ?? "all"} data={data} students={visibleStudents} staff={staff} selectedStudentId={selectedVisibleId} onSelect={setSelectedStudentId} onUploaded={load} />,
     academics: <AcademicsView data={data} students={visibleStudents} selectedStudentId={selectedVisibleId} onSelect={setSelectedStudentId} />,

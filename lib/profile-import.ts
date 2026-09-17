@@ -7,7 +7,8 @@ const weight = z.number().int().min(1).max(100);
 
 export const profileImportSchema = z.object({
   studentReference: z.object({ studentNumber: z.string().trim().min(1).max(30), name: z.string().trim().min(1).max(80) }).optional(),
-  schemaVersion: z.enum(["1.0", "1.1"]),
+  schemaVersion: z.enum(["1.0", "1.1", "1.2"]),
+  analysisContext: z.object({ asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), admissionsYear: z.number().int().min(2022).max(2100).nullable().default(null), curriculum: z.string().trim().max(150).default(""), gradingSystem: z.enum(["five", "nine", "achievement", "mixed", "unknown"]).default("unknown"), limitations: z.array(z.string().trim().max(1000)).max(30).default([]) }).optional(),
   versionLabel: z.string().trim().min(1).max(80),
   sourceYears: z.array(z.number().int().min(2022).max(2100)).min(1).max(3),
   overview: z.object({
@@ -31,7 +32,9 @@ export const profileImportSchema = z.object({
             selectionStatus: z
               .enum(["completed", "selected", "planned"])
               .default("completed"),
-            credits: z.number().int().min(0).max(20).default(0),
+            credits: z.number().int().min(0).max(20).nullable().default(null),
+            gradingSystem: z.enum(["five", "nine", "achievement", "unknown"]).default("unknown"),
+            evidenceRefs: z.array(z.string().trim().min(1).max(100)).max(30).default([]),
             rawScore: z.string().trim().max(40).default(""),
             achievement: z.string().trim().max(40).default(""),
             rankGrade: z.string().trim().max(40).default(""),
@@ -67,9 +70,9 @@ export const profileImportSchema = z.object({
         .array(
           z.object({
             subjectGroup: z.string().trim().min(1).max(100),
-            completedCredits: z.number().int().min(0).max(200).default(0),
-            selectedCredits: z.number().int().min(0).max(200).default(0),
-            plannedCredits: z.number().int().min(0).max(200).default(0),
+            completedCredits: z.number().int().min(0).max(200).nullable().default(null),
+            selectedCredits: z.number().int().min(0).max(200).nullable().default(null),
+            plannedCredits: z.number().int().min(0).max(200).nullable().default(null),
             note: z.string().trim().max(1_000).default(""),
             evidenceRefs: z.array(z.string().trim().min(1).max(100)).max(30),
           }),
@@ -95,6 +98,9 @@ export const profileImportSchema = z.object({
               "other",
             ]),
             note: z.string().trim().max(2_000).default(""),
+            sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+            materialRevision: z.number().int().positive().optional(),
+            department: z.string().trim().max(300).default(""),
           }),
         )
         .max(30)
@@ -104,7 +110,9 @@ export const profileImportSchema = z.object({
           z.object({
             sourceId: z.string().trim().min(1).max(100),
             competency: z.string().trim().min(1).max(150),
-            score: weight,
+            score: z.number().min(0).max(100).nullable().optional(),
+            scoreMethod: z.object({ rubric: z.string().trim().min(1).max(1000), sourcePage: z.number().int().positive(), maximum: z.number().positive().max(100) }).optional(),
+            evidenceState: z.enum(["documented", "partial", "missing", "not_applicable"]).default("partial"),
             level: z.string().trim().min(1).max(80),
             summary: z.string().trim().min(1).max(2_000),
             evidenceRefs: z.array(z.string().trim().min(1).max(100)).max(30),
@@ -122,6 +130,10 @@ export const profileImportSchema = z.object({
     .array(
       z.object({
         id: z.string().trim().min(1).max(100),
+        sourceState: z.enum(["recorded", "self_report", "interpretation", "planned", "unknown", "not_applicable"]).default("unknown"),
+        recordId: z.number().int().positive().nullable().default(null),
+        page: z.number().int().positive().max(10000).nullable().default(null),
+        sourceLocation: z.string().trim().max(1000).default(""),
         type: z.enum([
           "creative_activity",
           "subject_detail",
@@ -185,6 +197,8 @@ export const profileImportSchema = z.object({
         z.object({
           source: z.string().trim().min(1).max(100),
           target: z.string().trim().min(1).max(100),
+          evidenceRefs: z.array(z.string().trim().min(1).max(100)).max(30).default([]),
+          sourceState: z.enum(["recorded", "interpretation", "unknown"]).default("interpretation"),
           relation: z.string().trim().min(1).max(100),
           description: z.string().trim().max(1_000).default(""),
           weight,
@@ -221,8 +235,9 @@ export const profileImportSchema = z.object({
 
 export type ProfileImport = z.infer<typeof profileImportSchema>;
 
-export const profileImportExample: ProfileImport = {
-  schemaVersion: "1.1",
+export const profileImportExample: ProfileImport = profileImportSchema.parse({
+  schemaVersion: "1.2",
+  analysisContext: { asOf: "2026-09-17", admissionsYear: null, curriculum: "", gradingSystem: "unknown", limitations: ["가상 형식 예시입니다. 실제 학생의 원문과 적용 자료를 확인해 작성하세요."] },
   versionLabel: "2026-09-16-v1",
   sourceYears: [2025],
   overview: {
@@ -312,7 +327,8 @@ export const profileImportExample: ProfileImport = {
       {
         sourceId: "snu-2027-general",
         competency: "학업역량 — 탐구력",
-        score: 82,
+        score: null,
+        evidenceState: "partial",
         level: "근거 충분",
         summary: "자료를 비교하고 해석의 한계를 적는 활동이 여러 교과에서 반복됨",
         evidenceRefs: ["s1"],
@@ -391,4 +407,4 @@ export const profileImportExample: ProfileImport = {
       linkedNodeIds: ["concept-natural-selection", "activity-antibiotic"],
     },
   ],
-};
+});

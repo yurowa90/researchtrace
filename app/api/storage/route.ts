@@ -28,7 +28,6 @@ export async function POST(request: Request) {
     const {viewer,locations,config}=await owner();
     const body=await request.json() as Record<string,unknown>, action=body.action;
     if(action==="prepare") {
-      if(config?.state==="google") throw new Error("이미 구글 저장소를 사용 중입니다.");
       let current=config;
       if(!current) { const secret=Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,"0")).join(""); await getDb().insert(storageConnection).values({id:1,secret,ownerAuthUserId:viewer.authUserId}).onConflictDoNothing(); current=await getStorageConnection(); }
       if(!current) throw new Error("연결 코드를 준비하지 못했습니다.");
@@ -36,6 +35,14 @@ export async function POST(request: Request) {
       return Response.json({code},{headers});
     }
     if(!config) throw new Error("설치 코드 준비부터 시작하세요.");
+    if(action==="backup") {
+      if(config.state!=="google")throw new Error("Google 저장소로 전환한 뒤 사용할 수 있습니다.");
+      return Response.json(await bridgeCall("backup",{},config),{headers});
+    }
+    if(action==="health") {
+      const health=await bridgeCall<{schemaTables?:string[]}>("health",{},config);
+      return Response.json({updated:health.schemaTables?.includes("guidanceEntries")===true},{headers});
+    }
     if(action==="connect") {
       if(config.state!=="legacy") throw new Error("이전 진행 중이거나 이미 연결된 저장소는 변경할 수 없습니다.");
       const endpoint=validateGoogleEndpoint(body.endpoint), candidate={...config,endpoint};

@@ -87,7 +87,7 @@ test("Google endpoint validation rejects arbitrary hosts, query strings and deve
 // Faithful API-boundary harness: production Apps Script source, local Google
 // response fixtures. It does not substitute for the owner's live authorization.
 function scriptHarness() {
-  const config={secret:"test-only-key-".repeat(5),columns:tableColumns,spreadsheetId:"sheet",resultsFolderId:"results",recordsFolderId:"records",referencesFolderId:"references",folderId:"folder",ownerEmail:"owner@example.test"};
+  const config={secret:"test-only-key-".repeat(5),columns:structuredClone(tableColumns),backupsFolderId:"backups",spreadsheetId:"sheet",resultsFolderId:"results",recordsFolderId:"records",referencesFolderId:"references",folderId:"folder",ownerEmail:"owner@example.test"};
   const cells=Object.fromEntries(Object.entries(tableColumns).map(([name,headers])=>[name,[[...headers]]]));
   cells._meta=[["key","value"],["revision",0],["digest",""]];cells._files=[["objectKey","driveId","sha256","sizeBytes","originalName","contentType"]];
   const properties=Object.keys(cells).map((title,sheetId)=>({title,sheetId,gridProperties:{rowCount:1000,columnCount:26}}));
@@ -101,15 +101,17 @@ function scriptHarness() {
     Session:{getEffectiveUser:()=>({getEmail:()=>config.ownerEmail})},ScriptApp:{getOAuthToken:()=>"fixture-token"},
     ContentService:{MimeType:{JSON:"json"},createTextOutput:text=>({setMimeType:()=>({text})})},
     Utilities:{Charset:{UTF_8:"utf8"},DigestAlgorithm:{SHA_256:"sha256"},base64Encode:data=>Buffer.from(data).toString("base64"),base64Decode:data=>[...Buffer.from(data,"base64")],computeHmacSha256Signature:(data,key)=>[...createHmac("sha256",key).update(data).digest()],computeDigest:(_algorithm,data)=>[...createHash("sha256").update(typeof data==="string"?data:Buffer.from(data)).digest()],getUuid:randomUUID,newBlob:(data,type,name)=>({data:typeof data==="string"?Buffer.from(data):Buffer.from(data),type,name})},
-    DriveApp:{getFileById:id=>{const f=files.get(id);if(!f)throw new Error("missing");return f;},getFolderById:parent=>({createFile:blob=>{const id=randomUUID(),f={getId:()=>id,getSize:()=>blob.data.length,getBlob:()=>({getBytes:()=>[...blob.data],getDataAsString:()=>blob.data.toString("utf8")}),getParents:()=>{let found=false;return{hasNext:()=>!found,next:()=>{found=true;return{getId:()=>parent};}};}};files.set(id,f);return f;}})},
+    DriveApp:{Access:{PRIVATE:"private"},getFileById:id=>{const f=files.get(id);if(!f)throw new Error("missing");return f;},getFolderById:parent=>({getSharingAccess:()=>"private",createFile:blob=>{const id=randomUUID(),f={getId:()=>id,getUrl:()=>"https://drive.google.com/file/d/"+id,getSize:()=>blob.data.length,getBlob:()=>({getBytes:()=>[...blob.data],getDataAsString:()=>blob.data.toString("utf8")}),getParents:()=>{let found=false;return{hasNext:()=>!found,next:()=>{found=true;return{getId:()=>parent};}};}};files.set(id,f);return f;}})},
     SpreadsheetApp:{openById:()=>({getSheetByName:name=>({getDataRange:()=>({getValues:()=>structuredClone(cells[name])}),getSheetId:()=>properties.find(p=>p.title===name).sheetId})})},
     UrlFetchApp:{fetch:(url,options)=>{
       const u=new URL(url);
       if(u.pathname.endsWith("values:batchGet"))return resultObject({valueRanges:u.searchParams.getAll("ranges").map(range=>({values:structuredClone(cells[range.match(/^'([^']+)'/)[1]])}))});
+      if(u.pathname.includes("/values/")){const range=decodeURIComponent(u.pathname.split("/values/")[1]);const name=range.match(/^'([^']+)'/)[1];return resultObject({values:[structuredClone(cells[name][0])]});}
       if(u.pathname.endsWith(":batchUpdate")){
         if(failBatch) return{getResponseCode:()=>500};
         const requests=JSON.parse(options.payload).requests,next=structuredClone(cells);
         for(const req of requests){
+          if(req.addSheet){properties.push(req.addSheet.properties);next[req.addSheet.properties.title]=[];continue;}
           const update=req.updateCells??req.appendCells;if(!update)continue;
           const locator=update.range??update.start??update, sheet=properties.find(p=>p.sheetId===locator.sheetId),name=sheet.title;
           const first=req.appendCells?next[name].length:locator.startRowIndex??locator.rowIndex??0;
@@ -128,7 +130,7 @@ function scriptHarness() {
     return{postData:{contents:JSON.stringify({payload,signature:createHmac("sha256",config.secret).update(payload).digest("base64")})}};
   }
   const send=event=>JSON.parse(context.doPost(event).text);
-  return{context,config,cells,files,request,send,failNextBatch:()=>{failBatch=true;}};
+  return{context,config,cells,files,properties,request,send,failNextBatch:()=>{failBatch=true;}};
 }
 test("Apps Script rejects unsigned, stale, replayed requests before accessing data",()=>{
   const h=scriptHarness();assert.equal(h.send({postData:{contents:'{"payload":"x","signature":"bad"}'}}).code,"INVALID_SIGNATURE");
@@ -151,4 +153,30 @@ test("Drive file copies are verified and idempotent; failed Sheets batch does no
   assert.equal(h.send(h.request("putFile",{...data,sha256:"bad"})).code,"HASH_MISMATCH");
   h.failNextBatch();assert.equal(h.send(h.request("commit",{expectedRevision:0,tables:fixture().state.tables})).ok,false);
   assert.equal(h.send(h.request("read")).data.revision,0);
+});
+
+
+test("Apps Script adds new tabs without changing existing rows or legacy digest",()=>{
+  const h=scriptHarness(),oldColumns=structuredClone(h.config.columns);
+  delete oldColumns.guidanceEntries;h.config.columns=oldColumns;
+  delete h.cells.guidanceEntries;h.properties.splice(h.properties.findIndex(p=>p.title==="guidanceEntries"),1);
+  const state=fixture().state;delete state.tables.guidanceEntries;
+  assert.equal(h.send(h.request("commit",{expectedRevision:0,tables:state.tables})).ok,true);
+  const before=structuredClone(h.cells),digest=h.cells._meta[2][1];
+  h.context.installMissingSheets({...h.config,columns:tableColumns});
+  for(const [key,rows] of Object.entries(before))assert.deepEqual(h.cells[key],rows);
+  assert.deepEqual(h.cells.guidanceEntries[0],tableColumns.guidanceEntries);
+  h.config.columns=tableColumns;
+  const saved=h.send(h.request("read"));assert.equal(saved.ok,true,JSON.stringify(saved));
+  assert.equal(saved.data.revision,1);assert.deepEqual(saved.data.tables.guidanceEntries,[]);
+  assert.equal(h.context.tableDigest(saved.data.tables,tableColumns),digest);
+  h.context.installMissingSheets(h.config);assert.equal(h.properties.filter(p=>p.title==="guidanceEntries").length,1);
+});
+test("manual private backup preserves data and file index but excludes connection secrets",()=>{
+  const h=scriptHarness(),state=fixture().state;
+  assert.equal(h.send(h.request("commit",{expectedRevision:0,tables:state.tables})).ok,true);
+  const result=h.send(h.request("backup"));assert.equal(result.ok,true,JSON.stringify(result));
+  const text=[...h.files.values()].at(-1).getBlob().getDataAsString(),backup=JSON.parse(text);
+  assert.deepEqual(backup.tables,state.tables);assert.equal(backup.revision,1);assert.ok(Array.isArray(backup.fileIndex));
+  assert.ok(!text.includes(h.config.secret));assert.ok(!Object.hasOwn(backup,"config"));
 });

@@ -41,7 +41,17 @@ export async function bridgeCall<T>(operation: string, data: unknown, connection
   }
   return result.data as T;
 }
-export async function readGoogleState() { return bridgeCall<SchoolState>("read", {}); }
+export function normalizeGoogleState(state:SchoolState):SchoolState {
+  const sourceTables=Object.keys(state.tables);
+  if (!sourceTables.includes("guidanceEntries")) state.tables.guidanceEntries=[];
+  return {...state,sourceTables};
+}
+export async function readGoogleState() { return normalizeGoogleState(await bridgeCall<SchoolState>("read", {})); }
 export async function commitGoogleState(state: SchoolState) {
-  await bridgeCall("commit", { expectedRevision: state.revision, tables: state.tables });
+  const tables={...state.tables} as Record<string,unknown>;
+  if(state.sourceTables && !state.sourceTables.includes("guidanceEntries")) {
+    if(state.tables.guidanceEntries.length)throw new Error("Google 연결 코드 갱신이 필요합니다. 관리자 학교 설정에서 최신 코드를 설치하고 setupTrace를 실행하세요.");
+    delete tables.guidanceEntries;
+  }
+  await bridgeCall("commit", { expectedRevision: state.revision, tables });
 }

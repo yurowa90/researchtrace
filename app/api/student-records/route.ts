@@ -1,5 +1,5 @@
-import { putStoredFile, saveRecord, cleanupFailedFile } from "@/lib/file-storage";
-import { assertStorageWritable } from "@/lib/google-bridge";
+import { putStoredFile, saveRecord } from "@/lib/file-storage";
+import { assertStorageWritable, sha256 } from "@/lib/google-bridge";
 import { assertStudentAccess, ensureViewer } from "@/lib/data";
 import { validateRecordCoverage } from "@/lib/record-coverage";
 
@@ -35,9 +35,11 @@ export async function POST(request: Request) {
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
     if (!ALLOWED_EXTENSIONS.has(extension)) throw new Error("PDF, HWP, HWPX, DOCX 파일만 업로드할 수 있습니다.");
 
-    const safeName = file.name.replace(/[^0-9A-Za-z가-힣._-]/g, "_").slice(-120);
-    const objectKey = `student-records/${studentId}/grade-${latest.grade}/${crypto.randomUUID()}-${safeName}`;
-    await putStoredFile({ objectKey, originalName: file.name, contentType: file.type || "application/octet-stream", sizeBytes: file.size }, await file.arrayBuffer());
+    const bytes=await file.arrayBuffer();
+    const hash=await sha256(new Uint8Array(bytes));
+    const rangeHash=await sha256(new TextEncoder().encode(JSON.stringify(coverage)));
+    const objectKey = `student-records/${studentId}/${rangeHash}-${hash}`;
+    await putStoredFile({ objectKey, originalName: file.name, contentType: file.type || "application/octet-stream", sizeBytes: file.size }, bytes);
     let stored;
     try { stored = await saveRecord(viewer, {
       studentId,
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
       sizeBytes: file.size,
       processingStatus: "source_only",
     }); } catch (error) {
-      await cleanupFailedFile(objectKey).catch(() => console.error("student record cleanup failed"));
+      // Immutable content key may already be referenced by a concurrent successful retry.
       throw error;
     }
     return Response.json({ record: stored }, { status: 201 });
