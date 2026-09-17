@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { emptySchoolState, insertRow } from '../lib/school-tables.ts';
+import { emptySchoolState, insertRow, tableNames } from '../lib/school-tables.ts';
 import { auditSchoolData } from '../lib/school-audit.ts';
 import { GET as baselineGet } from '../app/api/school-baseline/route.ts';
 
@@ -17,7 +17,7 @@ test('school audit accepts a valid baseline without changing data or exposing id
   const {state} = fixture(); const before = structuredClone(state);
   const result = auditSchoolData(state.tables);
   assert.equal(result.errorCount, 0); assert.equal(result.warningCount, 0);
-  assert.equal(result.counts.realStudents, 1); assert.equal(result.counts.tables, 24);
+  assert.equal(result.counts.realStudents, 1); assert.equal(result.counts.tables, tableNames.length);
   assert.deepEqual(state, before); assert.equal(state.tables.students[0].studentNumber, '001');
   assert.ok(!JSON.stringify(result).includes('private-')); assert.ok(!JSON.stringify(result).includes('개인정보'));
 });

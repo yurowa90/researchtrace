@@ -1,4 +1,6 @@
 import { hydrateProfileDetails, profileEvidenceIssues } from "@/lib/profile-evidence";
+import { ensureLegacyIdentity, ensureSharedIdentity, type SchoolViewer } from "@/lib/school-identities";
+import { schoolSite } from "@/lib/site-runtime";
 import { approvedSchoolRole, canAccessSchoolStudent, canManageSchoolClass, isSchoolStaff } from "@/lib/school-permissions";
 import { guidanceForPortal } from "@/lib/guidance-store";
 import type { PortalData } from "@/lib/portal-types";
@@ -37,9 +39,9 @@ import { profileCoverageIssues, recordCoverage } from "@/lib/record-coverage";
 import { getReferenceGuidance, getReferenceLibrary, saveReferenceSelection, setReferenceStatus } from "@/lib/reference-library";
 import { libraryReferenceIssues } from "@/lib/reference-materials";
 import { googleEnabled, getStorageConnection, assertStorageWritable, readGoogleState } from "@/lib/google-bridge";
-import { ensureGoogleViewer, googlePortalData, googleAction, googleStudentAccess, currentGoogleViewer } from "@/lib/google-school";
+import { googlePortalData, googleAction, googleStudentAccess, currentGoogleViewer } from "@/lib/google-school";
 
-export type Viewer = typeof users.$inferSelect;
+export type Viewer = SchoolViewer;
 
 function jsonArray(value: string): string[] {
   try {
@@ -80,99 +82,14 @@ function numericId(value: unknown, label: string) {
 export async function ensureViewer(): Promise<Viewer | null> {
   const auth = await getRequestUser();
   if (!auth) return null;
-
-  const connection = await getStorageConnection();
-  if (connection?.state === "google") return ensureGoogleViewer(auth);
-  if (connection?.state === "migrating") {
-    const [viewer] = await getDb().select().from(users).where(eq(users.authUserId, auth.userId)).limit(1);
-    if (!viewer) throw new Error("저장소 이전 중입니다. 완료 후 로그인하세요.");
-    return viewer;
+  const site = schoolSite(), connection = await getStorageConnection();
+  if (connection?.state === "google") return ensureSharedIdentity(auth, site);
+  const viewer = await ensureLegacyIdentity(auth, site, connection?.state !== "migrating");
+  if (process.env.NODE_ENV !== "production" && auth.userId === "local-demo-teacher" && viewer.role === "admin" && connection?.state !== "migrating") {
+    const [workspace] = await getDb().select({ id: classes.id }).from(classes).where(eq(classes.teacherId, viewer.id)).limit(1);
+    if (!workspace) await seedTeacherWorkspace(viewer.id);
   }
-
-  const db = getDb();
-  const [existing] = await db
-    .select()
-    .from(users)
-    .where(eq(users.authUserId, auth.userId))
-    .limit(1);
-
-  if (existing) {
-    let current = existing;
-    if (existing.status === "approved" && existing.role === "teacher") {
-      const [admin] = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.role, "admin"))
-        .limit(1);
-      if (!admin) {
-        const [promoted] = await db
-          .update(users)
-          .set({ role: "admin" })
-          .where(eq(users.id, existing.id))
-          .returning();
-        if (promoted) current = promoted;
-      }
-    }
-    if (current.role === "admin" || current.role === "teacher") {
-      await db
-        .update(classes)
-        .set({ grade: 2, name: "2학년 학생부 프로파일" })
-        .where(and(eq(classes.teacherId, current.id), eq(classes.grade, 1)));
-    }
-    if (current.email !== auth.email || current.displayName !== auth.displayName) {
-      const [updated] = await db
-        .update(users)
-        .set({ email: auth.email, displayName: auth.displayName })
-        .where(eq(users.id, current.id))
-        .returning();
-      if ((updated.role === "teacher" || updated.role === "admin") && updated.status === "approved") {
-        const [workspace] = await db
-          .select({ id: classes.id })
-          .from(classes)
-          .where(eq(classes.teacherId, updated.id))
-          .limit(1);
-        if (!workspace) await seedTeacherWorkspace(updated.id);
-      }
-      return updated;
-    }
-    if ((current.role === "teacher" || current.role === "admin") && current.status === "approved") {
-      const [workspace] = await db
-        .select({ id: classes.id })
-        .from(classes)
-          .where(eq(classes.teacherId, current.id))
-          .limit(1);
-      if (!workspace) await seedTeacherWorkspace(current.id);
-    }
-    return current;
-  }
-
-  const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(users);
-  const [matchingStudent] = await db
-    .select()
-    .from(students)
-    .where(eq(students.email, auth.email))
-    .limit(1);
-  const firstUser = Number(count) === 0;
-  const [created] = await db
-    .insert(users)
-    .values({
-      authUserId: auth.userId,
-      email: auth.email,
-      displayName: auth.displayName,
-      role: firstUser ? "admin" : "student",
-      status: firstUser || matchingStudent ? "approved" : "pending",
-    })
-    .returning();
-
-  if (matchingStudent) {
-    await db
-      .update(students)
-      .set({ userId: created.id })
-      .where(eq(students.id, matchingStudent.id));
-  }
-
-  if (firstUser) await seedTeacherWorkspace(created.id);
-  return created;
+  return viewer;
 }
 
 async function seedTeacherWorkspace(teacherId: number) {
@@ -293,8 +210,6 @@ async function seedTeacherWorkspace(teacherId: number) {
 }
 
 export async function getPortalData(viewer: Viewer) {
-  if (await googleEnabled()) return googlePortalData(await readGoogleState(), viewer);
-  const db = getDb();
   if (!approvedSchoolRole(viewer)) {
     return {
       guidance: [], referenceChecks: [], appliedCriteria: [], viewer, classes: [], students: [], subjects: [], activities: [], fingerprints: [],
@@ -306,6 +221,8 @@ export async function getPortalData(viewer: Viewer) {
   }
 
 
+  if (await googleEnabled()) return googlePortalData(await readGoogleState(), viewer);
+  const db = getDb();
   // Use permission-scoped subqueries instead of binding one parameter per
   // student/profile. A school-wide view must keep working after a 300-row import.
   const studentScope = viewer.role === "admin" ? undefined

@@ -1,3 +1,4 @@
+import { rejectCrossSiteWrite } from "@/lib/request-guard";
 import { putStoredFile, saveRecord } from "@/lib/file-storage";
 import { assertStorageWritable, sha256 } from "@/lib/google-bridge";
 import { assertStudentAccess, ensureViewer } from "@/lib/data";
@@ -9,6 +10,7 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(["pdf", "hwp", "hwpx", "docx"]);
 
 export async function POST(request: Request) {
+  const rejected = rejectCrossSiteWrite(request); if (rejected) return rejected;
   try {
     const viewer = await ensureViewer();
     if (!viewer) return Response.json({ error: "로그인이 필요합니다." }, { status: 401 });

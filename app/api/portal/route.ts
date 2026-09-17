@@ -1,3 +1,4 @@
+import { rejectCrossSiteWrite } from "@/lib/request-guard";
 import { ensureViewer, getPortalData, performPortalAction } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const rejected = rejectCrossSiteWrite(request); if (rejected) return rejected;
   try {
     const viewer = await ensureViewer();
     if (!viewer) return Response.json({ error: "로그인이 필요합니다." }, { status: 401 });

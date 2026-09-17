@@ -63,6 +63,9 @@ export function auditSchoolData(t: SchoolRows) {
   const activities = new Map(t.activities.map(r => [r.id, r]));
   const threads = new Map(t.inquiryThreads.map(r => [r.id, r]));
   const linkedUsers = new Set<number>();
+  for (const identity of t.schoolIdentities) {
+    if (identity.status === "approved" && identity.userId == null) add("error", "identity_without_user", "schoolIdentities", identity, "승인된 사이트 로그인이 학교 계정에 연결되지 않았습니다.");
+  }
   for (const classroom of t.classes) {
     const teacher = accounts.get(classroom.teacherId);
     if (teacher && !["admin", "teacher"].includes(teacher.role)) add("error", "teacher_role", "classes", classroom, "담당 계정이 교사·관리자 역할이 아닙니다.");

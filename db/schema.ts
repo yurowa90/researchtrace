@@ -63,6 +63,36 @@ export const users = sqliteTable(
   ],
 );
 
+// A platform login subject is scoped to one Site. Internal users.id remains
+// stable across sites; email is contact information, not proof of identity.
+export const schoolIdentities = sqliteTable("school_identities", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  siteId: text("site_id").notNull(),
+  subject: text("subject").notNull(),
+  portalMode: text("portal_mode", { enum: ["unified", "student", "teacher", "admin"] }).notNull(),
+  email: text("email").notNull(),
+  displayName: text("display_name").notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "restrict" }),
+  status: text("status", { enum: ["pending", "approved", "rejected", "revoked"] }).notNull().default("pending"),
+  source: text("source", { enum: ["legacy", "request"] }).notNull().default("request"),
+  revision: integer("revision").notNull().default(1),
+  reviewedBy: integer("reviewed_by").references(() => users.id, { onDelete: "restrict" }),
+  reviewedAt: text("reviewed_at"),
+  verificationNote: text("verification_note").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+}, table => [uniqueIndex("idx_school_identities_site_subject").on(table.siteId, table.subject), index("idx_school_identities_user").on(table.userId)]);
+
+export const identityEvents = sqliteTable("identity_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  identityId: integer("identity_id").notNull().references(() => schoolIdentities.id, { onDelete: "restrict" }),
+  revision: integer("revision").notNull(),
+  action: text("action", { enum: ["approve", "reject", "revoke"] }).notNull(),
+  targetUserId: integer("target_user_id").references(() => users.id, { onDelete: "restrict" }),
+  actorId: integer("actor_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  note: text("note").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+}, table => [uniqueIndex("idx_identity_events_revision").on(table.identityId, table.revision)]);
+
 export const classes = sqliteTable(
   "classes",
   {

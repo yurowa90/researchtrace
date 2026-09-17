@@ -1,6 +1,6 @@
 // Shared definitions for the three future sites. This version is independent
 // of the Work JSON schema version and does not rewrite existing identifiers.
-export const SCHOOL_CONTRACT_VERSION = "1.0";
+export const SCHOOL_CONTRACT_VERSION = "1.1";
 export const schoolDataContract = [
   { entity: "학생", key: "students.id", rule: "이름·이메일·학번이 바뀌어도 같은 ID를 사용합니다. 학번은 앞자리 0을 보존하는 문자열이며 현재 학급 안에서 중복될 수 없습니다." },
   { entity: "계정", key: "users.id → students.userId", rule: "내부 계정 ID와 학생 ID를 구분합니다. 학생 계정 하나는 학생 한 명에게 연결합니다. 미연결 학생도 자료를 누적할 수 있습니다." },
@@ -8,7 +8,7 @@ export const schoolDataContract = [
   { entity: "기록 시점", key: "grade / schoolYear / sourceYears", rule: "학년, 기록의 학년도, 분석에 포함된 학년도를 구분합니다. 2·3학년 모두 원본에 현재 학년 기록이 있으면 분석에 포함합니다." },
   { entity: "원본·분석", key: "studentRecords.id / profileSnapshots.id", rule: "원본 파일과 분석 버전을 각각 식별합니다. 분석 하위 항목은 같은 학생·같은 분석 버전에 속하며 활성 버전은 학생당 하나입니다." },
   { entity: "평가 자료", key: "referenceMaterials.id / admissionsYear", rule: "모집요강의 대입 학년도는 학생부 학년도와 구분합니다. 파일·판본·승인 정보와 학생에게 적용한 기준을 함께 보존합니다." },
-  { entity: "사이트 간 로그인", key: "사이트 + 로그인 식별자 → users.id", rule: "세 사이트의 로그인 식별자는 서로 다를 수 있습니다. 2단계에서 확인된 계정 연결 절차를 만듭니다. 이메일 일치만으로 기존 계정을 자동 병합하지 않습니다." },
+  { entity: "사이트 간 로그인", key: "사이트 + 로그인 식별자 → users.id", rule: "세 사이트의 로그인 식별자는 서로 다를 수 있습니다. 별도 로그인 연결 요청을 관리자가 본인 확인 후 승인합니다. 연결 해제 이력을 보존하며 이메일 일치만으로 계정을 자동 병합하지 않습니다." },
 ] as const;
 
 export const phaseOneInventory = [
@@ -20,5 +20,5 @@ export const phaseOneInventory = [
   { feature: "진급·졸업", current: "학생 ID를 유지하는 학급 이동 이력, 졸업·보관 상태", next: "담임 변경 이력과 학교의 보존·졸업생 접근 정책 구체화" },
   { feature: "저장소", current: "기존 DB·파일 저장소, 구글 Drive·Sheets 연결 및 이전 기능", next: "구글 운영 연결·이전 결과와 세 사이트 동시 접근 검증" },
   { feature: "전체 백업", current: "원본·분석 버전 포함 ZIP 생성, 파일 해시·개수 검증", next: "관리자 실제 백업 보관 확인, 복원 절차는 후속 단계" },
-  { feature: "역할 분리", current: "한 사이트 안에서 학생·담임·관리자 접근 범위 적용", next: "2단계 공통 인증 이후 관리자 → 교사 → 학생 사이트 구현" },
+  { feature: "역할 분리", current: "한 사이트 안에서 학생·담임·관리자 접근 범위 적용", next: "공통 계정 연결을 사용해 관리자 → 교사 → 학생 사이트 구현" },
 ] as const;

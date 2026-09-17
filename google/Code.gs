@@ -24,6 +24,7 @@ function setupTrace() {
     const previous=JSON.parse(p.getProperty('TRACE_CONFIG')||'null');
     if(previous){
       if(previous.spreadsheetId!==TRACE_CONFIG.spreadsheetId)throw new Error('기존 데이터 시트가 다릅니다.');
+      if(previous.homeSiteId&&previous.homeSiteId!==TRACE_CONFIG.homeSiteId)throw new Error('기존 학교의 기준 사이트를 변경할 수 없습니다.');
       Object.keys(previous.columns).forEach(name=>{if(JSON.stringify(previous.columns[name])!==JSON.stringify(TRACE_CONFIG.columns[name]))throw new Error('기존 열은 변경할 수 없습니다: '+name);});
       readState(previous);
     }
@@ -52,6 +53,7 @@ function doPost(event) {
     const signature = Utilities.base64Encode(Utilities.computeHmacSha256Signature(envelope.payload, config.secret, Utilities.Charset.UTF_8));
     if (!constantEqual(signature, envelope.signature)) fail('INVALID_SIGNATURE');
     const request = JSON.parse(envelope.payload);
+    if (config.homeSiteId && request.homeSiteId !== config.homeSiteId) fail('WRONG_SCHOOL');
     if (request.version !== 1 || !Number.isFinite(request.timestamp) || Math.abs(Date.now() - request.timestamp) > 180000 || !/^[a-f0-9-]{36}$/.test(request.nonce)) fail('EXPIRED_REQUEST');
     lock.waitLock(20000);
     const cache = CacheService.getScriptCache();
@@ -59,7 +61,7 @@ function doPost(event) {
     cache.put(request.nonce, 'used', 600);
     return jsonResponse({ ok: true, data: dispatch(config, request.operation, request.data || {}) });
   } catch (error) {
-    const allowed = ['NOT_CONFIGURED', 'INVALID_REQUEST', 'INVALID_SIGNATURE', 'EXPIRED_REQUEST', 'REPLAY', 'CONFLICT', 'INVALID_STATE', 'MISSING_FILE', 'HASH_MISMATCH', 'UNKNOWN_OPERATION', 'SHEET_EDITED', 'STORAGE_LIMIT'];
+    const allowed = ['NOT_CONFIGURED', 'INVALID_REQUEST', 'INVALID_SIGNATURE', 'EXPIRED_REQUEST', 'REPLAY', 'CONFLICT', 'INVALID_STATE', 'MISSING_FILE', 'HASH_MISMATCH', 'UNKNOWN_OPERATION', 'SHEET_EDITED', 'STORAGE_LIMIT', 'WRONG_SCHOOL'];
     return jsonResponse({ ok: false, code: allowed.indexOf(error.message) >= 0 ? error.message : 'GOOGLE_ERROR' });
   } finally { if (lock.hasLock()) lock.releaseLock(); }
 }
@@ -73,7 +75,7 @@ function sheetsApi(config, path, method, body) {
 }
 function digest(text) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8).map(x => ('0' + (x & 255).toString(16)).slice(-2)).join(''); }
 function tableDigest(tables, columns) {
-  return digest(JSON.stringify(Object.keys(columns).filter(name=>name!=='guidanceEntries'||(tables[name]||[]).length>0).sort().map(name => [name, (tables[name] || []).map(row => columns[name].map(key => row[key] === undefined ? null : row[key]))])));
+  return digest(JSON.stringify(Object.keys(columns).filter(name=>['guidanceEntries','schoolIdentities','identityEvents'].indexOf(name)<0||(tables[name]||[]).length>0).sort().map(name => [name, (tables[name] || []).map(row => columns[name].map(key => row[key] === undefined ? null : row[key]))])));
 }
 function checkedResultFile(config, id) {
   const file = DriveApp.getFileById(id), parents = file.getParents(); let inside = false;
@@ -110,7 +112,7 @@ function readState(config) {
   const meta = Object.fromEntries((result[names.length].values || []).slice(1));
   const revision = Number(meta.revision || 0);
   if (revision > 0 && meta.digest !== tableDigest(tables, config.columns)) fail('SHEET_EDITED');
-  return { revision: revision, tables: tables };
+  return { revision: revision, tables: tables, homeSiteId: config.homeSiteId || null };
 }
 function writeState(config, data) {
   const current = readState(config);
@@ -158,7 +160,7 @@ function putFile(config, data) {
   return { sizeBytes: bytes.length, sha256: hash };
 }
 function dispatch(config, operation, data) {
-  if (operation === 'health') { readState(config); return { version: 1, spreadsheetId: config.spreadsheetId, folderId: config.folderId, ownerEmail: Session.getEffectiveUser().getEmail(), schemaTables:Object.keys(config.columns) }; }
+  if (operation === 'health') { readState(config); return { version: 1, spreadsheetId: config.spreadsheetId, folderId: config.folderId, ownerEmail: Session.getEffectiveUser().getEmail(), schemaTables:Object.keys(config.columns), homeSiteId:config.homeSiteId||null }; }
   if (operation === 'backup') return backupState(config);
   if (operation === 'read') return readState(config);
   if (operation === 'commit') return writeState(config, data);

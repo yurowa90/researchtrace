@@ -1132,5 +1132,6 @@ export function PortalError({
 }
 
 export function PendingAccess({ viewer }: { viewer: Viewer }) {
-  return <main className="grid min-h-screen place-items-center bg-[#f4f7fb] px-6"><Card className="w-full max-w-lg border-[#dfe5ee] shadow-lg"><CardContent className="p-8"><ShieldCheck className="size-10 text-[#2457d6]" /><h1 className="mt-5 text-2xl font-bold">학교 관리자 승인을 기다리고 있습니다.</h1><p className="mt-3 leading-7 text-[#66768a]">{viewer.email} 계정으로 접속했습니다. 학교 관리자가 담임 계정으로 승인하거나, 등록된 학생 이메일과 연결하면 해당 권한 범위의 자료를 열람할 수 있습니다.</p></CardContent></Card></main>;
+  const blocked = viewer.status === "suspended", linking = viewer.id === 0;
+  return <main className="grid min-h-screen place-items-center bg-[#f4f7fb] px-6"><Card className="w-full max-w-lg border-[#dfe5ee] shadow-lg"><CardContent className="p-8"><ShieldCheck className="size-10 text-[#2457d6]" /><h1 className="mt-5 text-2xl font-bold">{blocked?"계정 또는 사이트 연결이 중지되어 있습니다.":linking?"기존 학교 계정과의 연결 승인을 기다리고 있습니다.":"학교 계정 승인을 기다리고 있습니다."}</h1><p className="mt-3 leading-7 text-[#66768a]">{viewer.email} 계정으로 접속했습니다. {blocked?"학교 관리자에게 계정과 연결 상태 확인을 요청해야 합니다. 학생 기록은 삭제되지 않습니다.":linking?"연결 요청을 저장했습니다. 학교 관리자가 본인 확인 후 기존 계정에 연결하면 누적된 학생 기록을 이어서 볼 수 있습니다.":"학교 관리자가 담임 역할을 승인하거나 담당 교사가 등록된 학생과 계정을 연결하면 허용된 자료를 열람할 수 있습니다."}</p><Button variant="outline" className="mt-5" onClick={()=>window.location.reload()}>승인 상태 다시 확인</Button></CardContent></Card></main>;
 }

@@ -1,4 +1,6 @@
 import { latestGuidance, decodeGuidance } from "@/lib/guidance";
+import { currentIdentityActor, ensureSharedIdentity } from "@/lib/school-identities";
+import { schoolSite } from "@/lib/site-runtime";
 import { approvedSchoolRole, canAccessSchoolStudent, canManageSchoolClass, isSchoolAdmin, isSchoolStaff } from "@/lib/school-permissions";
 import { hydrateProfileDetails, profileEvidenceIssues } from "@/lib/profile-evidence";
 import { guidanceFromState } from "@/lib/guidance-store";
@@ -23,10 +25,9 @@ function text(value: unknown, label: string, max = 2000, required = true) {
 function id(value: unknown) { const result = Number(value); if (!Number.isSafeInteger(result) || result < 1) throw new Error("대상 정보를 확인하세요."); return result; }
 function requireStaff(viewer: Viewer, admin = false) { if (!(admin ? isSchoolAdmin(viewer) : isSchoolStaff(viewer))) throw new Error(admin ? "관리자 권한이 필요합니다." : "교사 또는 관리자 권한이 필요합니다."); }
 export function currentGoogleViewer(state: SchoolState, viewer: Viewer): Viewer {
-  const current = state.tables.users.find(row => row.id === viewer.id && row.authUserId === viewer.authUserId);
-  if (!current) throw new Error("사용자 권한을 확인할 수 없습니다.");
-  return current;
+  return currentIdentityActor(state.tables, viewer);
 }
+
 export function googleStudentAccess(state: SchoolState, viewer: Viewer, studentId: number) {
   viewer = currentGoogleViewer(state, viewer);
   const student = state.tables.students.find(row => row.id === studentId);
@@ -40,26 +41,9 @@ function classAccess(state: SchoolState, viewer: Viewer, classId: number) {
   return classroom;
 }
 export async function ensureGoogleViewer(auth: { userId: string; email: string; displayName: string }): Promise<Viewer> {
-  const state = await readGoogleState();
-  const email = auth.email.trim().toLowerCase();
-  let viewer = state.tables.users.find(row => row.authUserId === auth.userId);
-  let changed = false;
-  if (!viewer) {
-    if (!state.tables.users.some(row => row.role === "admin" && row.status === "approved")) throw new Error("관리자 데이터 이전을 완료하세요.");
-    if (state.tables.users.some(row => row.email.toLowerCase() === email)) throw new Error("이미 다른 로그인 계정에 연결된 이메일입니다.");
-    const matches = state.tables.students.filter(row => row.email?.toLowerCase() === email && row.userId === null);
-    const matchingStudent = matches.length === 1 ? matches[0] : undefined;
-    viewer = insertRow(state, "users", { authUserId: auth.userId, email, displayName: auth.displayName, role: "student", status: matchingStudent ? "approved" : "pending" });
-    if (matchingStudent) matchingStudent.userId = viewer.id;
-    changed = true;
-  } else if (viewer.email !== email || viewer.displayName !== auth.displayName) {
-    const viewerId = viewer.id;
-    if (state.tables.users.some(row => row.id !== viewerId && row.email.toLowerCase() === email)) throw new Error("이메일 연결을 확인하세요.");
-    viewer.email = email; viewer.displayName = auth.displayName; changed = true;
-  }
-  if (changed) await commitGoogleState(state);
-  return viewer;
+  return ensureSharedIdentity(auth, schoolSite());
 }
+
 export function googlePortalData(state: SchoolState, givenViewer: Viewer): PortalData {
   const viewer = currentGoogleViewer(state, givenViewer), t = state.tables;
   const approved = Boolean(approvedSchoolRole(viewer)), staff = isSchoolStaff(viewer);

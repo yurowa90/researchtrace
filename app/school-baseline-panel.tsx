@@ -8,7 +8,7 @@ import { schoolPermissionMatrix } from "@/lib/school-permissions";
 import type { auditSchoolData } from "@/lib/school-audit";
 
 type Report = { capturedAt: string; storage: "legacy" | "google"; revision: number | null; audit: ReturnType<typeof auditSchoolData> };
-const tableLabels: Record<string, string> = { users:"계정", classes:"학급", students:"학생", subjects:"과목", activities:"활동", fingerprints:"활동 연구지문", activityFiles:"활동 원본", inquiryThreads:"탐구 흐름", threadActivities:"탐구 활동 연결", studentRecords:"학생부 원본", profileSnapshots:"분석 버전", profileSections:"분석 근거 항목", researchKeywords:"연구 키워드", ontologyNodes:"온톨로지 항목", ontologyEdges:"온톨로지 연결", wikiPages:"위키", academicCourseRecords:"교과 성적", academicTrends:"성적 변화", creditSummaries:"학점 요약", evaluationReferences:"적용 평가 자료", competencyEvaluations:"역량 점검", referenceMaterials:"공용 평가 자료", referenceSelections:"Work 자료 선택", guidanceEntries:"지도 이력" };
+const tableLabels: Record<string, string> = { schoolIdentities:"사이트 계정 연결", identityEvents:"계정 연결 이력", users:"계정", classes:"학급", students:"학생", subjects:"과목", activities:"활동", fingerprints:"활동 연구지문", activityFiles:"활동 원본", inquiryThreads:"탐구 흐름", threadActivities:"탐구 활동 연결", studentRecords:"학생부 원본", profileSnapshots:"분석 버전", profileSections:"분석 근거 항목", researchKeywords:"연구 키워드", ontologyNodes:"온톨로지 항목", ontologyEdges:"온톨로지 연결", wikiPages:"위키", academicCourseRecords:"교과 성적", academicTrends:"성적 변화", creditSummaries:"학점 요약", evaluationReferences:"적용 평가 자료", competencyEvaluations:"역량 점검", referenceMaterials:"공용 평가 자료", referenceSelections:"Work 자료 선택", guidanceEntries:"지도 이력" };
 
 export function SchoolBaselinePanel() {
   const [report, setReport] = React.useState<Report | null>(null);

@@ -158,14 +158,15 @@ test("Drive file copies are verified and idempotent; failed Sheets batch does no
 
 test("Apps Script adds new tabs without changing existing rows or legacy digest",()=>{
   const h=scriptHarness(),oldColumns=structuredClone(h.config.columns);
-  delete oldColumns.guidanceEntries;h.config.columns=oldColumns;
-  delete h.cells.guidanceEntries;h.properties.splice(h.properties.findIndex(p=>p.title==="guidanceEntries"),1);
-  const state=fixture().state;delete state.tables.guidanceEntries;
+  const added=["guidanceEntries","schoolIdentities","identityEvents"];
+  for(const name of added){delete oldColumns[name];delete h.cells[name];h.properties.splice(h.properties.findIndex(p=>p.title===name),1);}
+  h.config.columns=oldColumns;
+  const state=fixture().state;for(const name of added)delete state.tables[name];
   assert.equal(h.send(h.request("commit",{expectedRevision:0,tables:state.tables})).ok,true);
   const before=structuredClone(h.cells),digest=h.cells._meta[2][1];
   h.context.installMissingSheets({...h.config,columns:tableColumns});
   for(const [key,rows] of Object.entries(before))assert.deepEqual(h.cells[key],rows);
-  assert.deepEqual(h.cells.guidanceEntries[0],tableColumns.guidanceEntries);
+  for(const name of added)assert.deepEqual(h.cells[name][0],tableColumns[name]);
   h.config.columns=tableColumns;
   const saved=h.send(h.request("read"));assert.equal(saved.ok,true,JSON.stringify(saved));
   assert.equal(saved.data.revision,1);assert.deepEqual(saved.data.tables.guidanceEntries,[]);
@@ -179,4 +180,13 @@ test("manual private backup preserves data and file index but excludes connectio
   const text=[...h.files.values()].at(-1).getBlob().getDataAsString(),backup=JSON.parse(text);
   assert.deepEqual(backup.tables,state.tables);assert.equal(backup.revision,1);assert.ok(Array.isArray(backup.fileIndex));
   assert.ok(!text.includes(h.config.secret));assert.ok(!Object.hasOwn(backup,"config"));
+});
+
+
+test("Google shared storage binds every signed request to the configured home site",()=>{
+  const h=scriptHarness();h.config.homeSiteId="home-site";
+  const wrong=h.send(h.request("read",{}, {homeSiteId:"other-school"}));
+  assert.equal(wrong.code,"WRONG_SCHOOL");
+  const correct=h.send(h.request("read",{}, {homeSiteId:"home-site"}));
+  assert.equal(correct.ok,true);assert.equal(correct.data.homeSiteId,"home-site");
 });

@@ -1,3 +1,4 @@
+import { rejectCrossSiteWrite } from "@/lib/request-guard";
 import { putStoredFile, saveActivityFile } from "@/lib/file-storage";
 import { assertStorageWritable } from "@/lib/google-bridge";
 import { assertActivityAccess, ensureViewer } from "@/lib/data";
@@ -14,6 +15,7 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 export async function POST(request: Request) {
+  const rejected = rejectCrossSiteWrite(request); if (rejected) return rejected;
   try {
     const viewer = await ensureViewer();
     if (!viewer) return Response.json({ error: "로그인이 필요합니다." }, { status: 401 });
