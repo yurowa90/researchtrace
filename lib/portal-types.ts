@@ -295,6 +295,7 @@ export type ViewId =
   | "students"
   | "records"
   | "academics"
+  | "activityReview"
   | "fingerprint"
   | "evaluation"
   | "wiki"
