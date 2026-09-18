@@ -4,6 +4,7 @@ import { Download, FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { verifySchoolBackup } from "@/lib/verify-school-backup";
+import { downloadSchoolBackup } from "@/lib/download-school-backup";
 
 export function SchoolBackupPanel() {
   const [busy, setBusy] = React.useState(false), [error, setError] = React.useState("");
@@ -16,13 +17,7 @@ export function SchoolBackupPanel() {
     finally { lock.current = false; setBusy(false); }
   };
   const download = () => run(async () => {
-    const response = await fetch("/api/school-backup", { cache: "no-store" });
-    if (!response.ok) { const body = await response.json() as { error?: string }; throw new Error(body.error || "백업을 만들지 못했습니다."); }
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const verified = await verifySchoolBackup(bytes);
-    const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
-    const a = document.createElement("a"); a.href = url; a.download = `TRACE-school-backup-${verified.capturedAt.replace(/[^0-9TZ-]/g, "-")}.zip`; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000); setResult(verified);
+    setResult((await downloadSchoolBackup()).verified);
   });
   return <Card className="mb-5 border-[#c5d5e7]"><CardContent className="space-y-4 p-5">
     <div><h2 className="text-xl font-bold">원본 포함 전체 백업</h2><p className="mt-2 text-base leading-7 text-[#65768b]">학생·학급·성적·분석 버전·지도 기록과 등록된 원본 파일을 함께 보관합니다. 기존 저장소와 구글 저장소에서 모두 사용할 수 있습니다.</p></div>

@@ -165,7 +165,7 @@ function putFile(config, data) {
   return { sizeBytes: bytes.length, sha256: hash };
 }
 function dispatch(config, operation, data) {
-  if (operation === 'health') { readState(config); return { version: 1, spreadsheetId: config.spreadsheetId, folderId: config.folderId, ownerEmail: Session.getEffectiveUser().getEmail(), schemaTables:Object.keys(config.columns), homeSiteId:config.homeSiteId||null }; }
+  if (operation === 'health') { readState(config); return { version: 1, spreadsheetId: config.spreadsheetId, folderId: config.folderId, ownerEmail: Session.getEffectiveUser().getEmail(), schemaTables:Object.keys(config.columns), schemaColumns:config.columns, homeSiteId:config.homeSiteId||null }; }
   if (operation === 'backup') return backupState(config);
   if (operation === 'read') return readState(config);
   if (operation === 'commit') return writeState(config, data);

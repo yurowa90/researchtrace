@@ -1,6 +1,6 @@
 // Node-only test adapter. Never imported by the application.
 import { registerHooks } from "node:module";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -10,6 +10,10 @@ registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === "cloudflare:workers") return { url: "data:text/javascript,export const env=globalThis.__portalTestEnv", shortCircuit: true };
     if (specifier === "@/lib/server-auth") return { url: "data:text/javascript,export async function getRequestUser(){return globalThis.__portalTestUser??null}", shortCircuit: true };
+    if (specifier.startsWith("@/") && specifier.endsWith("?raw")) {
+      const text = readFileSync(resolve(root, specifier.slice(2, -4)), "utf8");
+      return { url: "data:text/javascript," + encodeURIComponent("export default " + JSON.stringify(text)), shortCircuit: true };
+    }
     if (specifier.startsWith("@/")) {
       const base = resolve(root, specifier.slice(2));
       const path = [base + ".ts", resolve(base, "index.ts")].find(existsSync);

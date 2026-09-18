@@ -1,18 +1,14 @@
 import { env } from "cloudflare:workers";
-import { getDb } from "@/db";
-import { schoolTables, tableNames, tableColumns, type SchoolRows } from "@/lib/school-tables";
+import type { SchoolRows } from "@/lib/school-tables";
+import { readLegacySchoolTables } from "@/lib/school-snapshot";
+export { schoolDigestInput } from "@/lib/school-data-digest";
 import { bridgeCall, sha256, toBase64, type StorageConnection } from "@/lib/google-bridge";
 
 export async function legacySchoolRows(): Promise<SchoolRows> {
-  const db=getDb(), result: [string,unknown][]=[];
-  for(const name of tableNames) result.push([name,await db.select().from(schoolTables[name])]);
-  return Object.fromEntries(result) as SchoolRows;
+  return readLegacySchoolTables();
 }
 export function legacyFiles(tables: SchoolRows) {
   return [...tables.studentRecords,...tables.referenceMaterials,...tables.activityFiles].sort((a,b)=>a.objectKey.localeCompare(b.objectKey));
-}
-export function schoolDigestInput(tables: SchoolRows) {
-  return JSON.stringify([...tableNames].sort().map(name=>[name,(tables[name] as Record<string,unknown>[]).map(row=>tableColumns[name].map(key=>row[key]??null))]));
 }
 export async function copyLegacyFile(index: number, connection: StorageConnection) {
   const files=legacyFiles(await legacySchoolRows()), row=files[index];
