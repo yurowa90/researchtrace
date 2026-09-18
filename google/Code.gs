@@ -146,9 +146,22 @@ function writeState(config, data) {
 function fileIndex(config) {
   const sheet = SpreadsheetApp.openById(config.spreadsheetId).getSheetByName('_files');
   const rows = sheet.getDataRange().getValues();
+  if(JSON.stringify(rows[0])!==JSON.stringify(['objectKey','driveId','sha256','sizeBytes','originalName','contentType']))fail('INVALID_STATE');
+  const keys=Object.create(null);rows.slice(1).forEach(row=>{if(typeof row[0]!=='string'||!row[0]||keys[row[0]]||typeof row[2]!=='string'||!/^[a-f0-9]{64}$/.test(row[2])||!Number.isSafeInteger(row[3])||row[3]<0)fail('INVALID_STATE');keys[row[0]]=true;});
   return { sheet: sheet, rows: rows.slice(1), headers: rows[0] };
 }
 function fileEntry(config, key) { const index = fileIndex(config); return index.rows.find(row => row[0] === key); }
+function verifiedOriginal(config,row) {
+  let file;try{file=DriveApp.getFileById(row[1]);}catch(error){fail('MISSING_FILE');}
+  const folderId=row[0].indexOf('reference-materials/')===0?config.referencesFolderId:row[0].indexOf('results/')===0?config.resultsFolderId:config.recordsFolderId;
+  const parents=file.getParents();let inside=false;while(parents.hasNext())if(parents.next().getId()===folderId)inside=true;
+  if(!inside)fail('INVALID_STATE');
+  if(file.getSize()!==row[3])fail('HASH_MISMATCH');
+  const bytes=file.getBlob().getBytes();
+  const hash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,bytes).map(x=>('0'+(x&255).toString(16)).slice(-2)).join('');
+  if(bytes.length!==row[3]||hash!==row[2])fail('HASH_MISMATCH');
+  return bytes;
+}
 function putFile(config, data) {
   if (typeof data.objectKey !== 'string' || data.objectKey.length > 500 || typeof data.base64 !== 'string') fail('INVALID_REQUEST');
   const bytes = Utilities.base64Decode(data.base64);
@@ -156,7 +169,7 @@ function putFile(config, data) {
   const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes).map(x => ('0' + (x & 255).toString(16)).slice(-2)).join('');
   if (hash !== data.sha256 || bytes.length !== data.sizeBytes) fail('HASH_MISMATCH');
   const prior = fileEntry(config, data.objectKey);
-  if (prior) { if (prior[2] !== hash || prior[3] !== bytes.length) fail('HASH_MISMATCH'); DriveApp.getFileById(prior[1]).getSize(); return { sizeBytes: bytes.length, sha256: hash }; }
+  if (prior) { if (prior[2] !== hash || prior[3] !== bytes.length) fail('HASH_MISMATCH'); verifiedOriginal(config,prior); return { sizeBytes: bytes.length, sha256: hash }; }
   const folderId = data.objectKey.indexOf('reference-materials/') === 0 ? config.referencesFolderId : data.objectKey.indexOf('results/') === 0 ? config.resultsFolderId : config.recordsFolderId;
   const file = DriveApp.getFolderById(folderId).createFile(Utilities.newBlob(bytes, data.contentType || 'application/octet-stream', String(data.originalName || 'TRACE 파일').slice(0, 200)));
   const index = fileIndex(config);
@@ -165,22 +178,23 @@ function putFile(config, data) {
   return { sizeBytes: bytes.length, sha256: hash };
 }
 function dispatch(config, operation, data) {
-  if (operation === 'health') { readState(config); return { version: 1, spreadsheetId: config.spreadsheetId, folderId: config.folderId, ownerEmail: Session.getEffectiveUser().getEmail(), schemaTables:Object.keys(config.columns), schemaColumns:config.columns, homeSiteId:config.homeSiteId||null }; }
+  if (operation === 'health') { readState(config); return { version: 1, spreadsheetId: config.spreadsheetId, folderId: config.folderId, ownerEmail: Session.getEffectiveUser().getEmail(), schemaTables:Object.keys(config.columns), schemaColumns:config.columns, homeSiteId:config.homeSiteId||null, fileVerificationVersion:1 }; }
   if (operation === 'backup') return backupState(config);
   if (operation === 'read') return readState(config);
   if (operation === 'commit') return writeState(config, data);
   if (operation === 'putFile') return putFile(config, data);
   if (operation === 'checkFiles') {
     const rows = fileIndex(config).rows;
-    if (!Array.isArray(data.files) || data.files.some(file => !rows.some(row => row[0] === file.objectKey && row[3] === file.sizeBytes))) fail('MISSING_FILE');
-    return { checked: data.files.length };
+    if (!Array.isArray(data.files)||data.files.length>10)fail('INVALID_REQUEST');
+    data.files.forEach(file=>{const row=rows.find(r=>r[0]===file.objectKey&&r[3]===file.sizeBytes);if(!row)fail('MISSING_FILE');verifiedOriginal(config,row);});
+    return { checked: data.files.length, verificationVersion:1 };
   }
   if (operation === 'headFile' || operation === 'getFile') {
     const row = fileEntry(config, data.objectKey); if (!row) fail('MISSING_FILE');
     const file = DriveApp.getFileById(row[1]);
     if (file.getSize() !== row[3]) fail('HASH_MISMATCH');
     const result = { sizeBytes: row[3], sha256: row[2], contentType: row[5] };
-    if (operation === 'getFile') { const bytes = file.getBlob().getBytes(); const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes).map(x => ('0' + (x & 255).toString(16)).slice(-2)).join(''); if (hash !== row[2]) fail('HASH_MISMATCH'); result.base64 = Utilities.base64Encode(bytes); }
+    if (operation === 'getFile') result.base64 = Utilities.base64Encode(verifiedOriginal(config,row));
     return result;
   }
   fail('UNKNOWN_OPERATION');

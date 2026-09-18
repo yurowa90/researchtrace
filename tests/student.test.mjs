@@ -3,32 +3,37 @@ import test from 'node:test';
 import {readFileSync,readdirSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {GET,POST} from '../app/api/student/route.ts';
+import {GET as portalGET} from '../app/api/portal/route.ts';
+import {POST as guidancePOST} from '../app/api/guidance/route.ts';
+import {GET as originalGET} from '../app/api/student-records/[id]/route.ts';
+import {performPortalAction} from '../lib/data.ts';
 import {POST as accessPost} from '../app/api/school-access/route.ts';
 import {saveGuidance} from '../lib/guidance-store.ts';
 import {getStudentReport} from '../lib/student-data.ts';
 import {studentOverview,studentProjection,studentUrl} from '../lib/student-overview.ts';
 import {emptySchoolState,insertRow} from '../lib/school-tables.ts';
-import {googlePortalData} from '../lib/google-school.ts';
+import {googlePortalData,googleStudentAccess} from '../lib/google-school.ts';
 import {registerStudentIdentity,resolveGoogleIdentity} from '../lib/school-identities.ts';
 import {schoolSite} from '../lib/site-runtime.ts';
 import {guidancePayloadSchema} from '../lib/guidance.ts';
 
 class MemoryD1 {
  sql=new DatabaseSync(':memory:');
- constructor(){this.sql.exec('PRAGMA foreign_keys=ON');for(const n of readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())this.sql.exec(readFileSync(new URL('../drizzle/'+n,import.meta.url),'utf8'));}
+ constructor(beforeSafetyMigration=false){this.sql.exec('PRAGMA foreign_keys=ON');for(const n of readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')&&(!beforeSafetyMigration||!n.startsWith('0008_'))).sort())this.sql.exec(readFileSync(new URL('../drizzle/'+n,import.meta.url),'utf8'));}
  prepare(query){const db=this;const make=params=>({bind(...args){return make(args);},async raw(){const s=db.sql.prepare(query);s.setReturnArrays(true);return s.all(...params);},async all(){return{success:true,results:db.sql.prepare(query).all(...params),meta:{}};},async run(){db.sql.prepare(query).run(...params);return{success:true,results:[],meta:{}};}});return make([]);}
- async batch(queries){this.sql.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.all());this.sql.exec('COMMIT');return results;}catch(e){this.sql.exec('ROLLBACK');throw e;}}
+ batchQueue=Promise.resolve();
+ batch(queries){const run=async()=>{this.sql.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.all());this.sql.exec('COMMIT');return results;}catch(e){this.sql.exec('ROLLBACK');throw e;}};const result=this.batchQueue.then(run);this.batchQueue=result.catch(()=>{});return result;}
 }
 const login=n=>({userId:n,email:`${n}@example.test`,displayName:n});
 const request=body=>new Request('https://student.example/api/student',{method:'POST',headers:{Origin:'https://student.example','Content-Type':'application/json'},body:JSON.stringify(body)});
 const read=(suffix='')=>GET(new Request(`https://student.example/api/student${suffix}`));
 const actor=(id,name,role='student')=>({id,authUserId:name,email:`${name}@example.test`,displayName:name,role,status:'approved'});
-function fixture(){
- const db=new MemoryD1();globalThis.__portalTestEnv.DB=db;
+function fixture(beforeSafetyMigration=false){
+ const db=new MemoryD1(beforeSafetyMigration);globalThis.__portalTestEnv.DB=db;
  db.sql.exec("INSERT INTO users(auth_user_id,email,display_name,role,status) VALUES('owner','owner@example.test','관리자','admin','approved'),('teacher','teacher@example.test','교사','teacher','approved'),('pupil','pupil@example.test','학생','student','approved'),('other','other@example.test','다른 학생','student','approved'),('pending','pending@example.test','대기','student','pending'),('unlinked','unlinked@example.test','미연결','student','approved'); INSERT INTO classes(teacher_id,name,grade,school_year,invite_code) VALUES(2,'가상 2학년',2,2026,'PRIVATE'),(1,'가상 3학년',3,2026,'OTHER'); INSERT INTO students(class_id,student_number,name,email,user_id) VALUES(1,'0001','가상 학생','pupil@example.test',3),(2,'0002','다른 가상 학생','other@example.test',4);");
  return db;
 }
-function cleanup(db){delete globalThis.__portalTestUser;for(const key of ['TRACE_PORTAL_MODE','TRACE_HOME_SITE_ID','TRACE_SHARED_GOOGLE_CONNECTION'])delete globalThis.__portalTestEnv[key];db.sql.close();}
+function cleanup(db){delete globalThis.__portalTestUser;for(const key of ['TRACE_PORTAL_MODE','TRACE_HOME_SITE_ID','TRACE_SHARED_GOOGLE_CONNECTION','DB','BUCKET'])delete globalThis.__portalTestEnv[key];db.sql.close();}
 test('student API returns only the linked student and separates login, approval, role and missing linkage',async()=>{
  const db=fixture();try{
   assert.equal((await read()).status,401);
@@ -87,15 +92,44 @@ test('latest private revision hides an entire record and student-visible history
   globalThis.__portalTestUser=login('owner');assert.doesNotMatch(JSON.stringify(await (await read(`?student=1&history=${one.entityKey}`)).json()),/SECRET REVISION/);
  }finally{cleanup(db);}
 });
-test('duplicate roster links, revoked sessions, persisted roles and unconfigured secondary storage fail closed',async()=>{
- const db=fixture();try{
-  const student=actor(3,'pupil');await assert.rejects(()=>getStudentReport({...student,role:'admin'},2),/본인/);await assert.rejects(()=>getStudentReport({...student,loginIdentityId:999,loginSiteId:'unknown'}),/해제/);
-  db.sql.exec("UPDATE students SET user_id=3 WHERE id=2");globalThis.__portalTestUser=login('pupil');assert.equal((await read()).status,403);assert.equal((await POST(request({kind:'question',payload:{title:'연결 충돌'}}))).status,403);
-  globalThis.__portalTestEnv.TRACE_PORTAL_MODE='student';globalThis.__portalTestEnv.TRACE_HOME_SITE_ID='other-home';
+test('pre-existing duplicate links fail closed across student, portal, guidance and original routes after upgrade',async()=>{
+ const db=fixture(true);
+ // Preserve corrupt legacy data during upgrade; never bypass deployed triggers.
+ db.sql.exec("UPDATE students SET user_id=3,status='archived' WHERE id=2; INSERT INTO student_records(student_id,owner_user_id,record_grade,school_year,object_key,original_name,content_type,size_bytes) VALUES(2,1,1,2025,'other-original','other.pdf','application/pdf',1)");
+ db.sql.exec(readFileSync(new URL('../drizzle/0008_storage_migration_session.sql',import.meta.url),'utf8'));
+ try{
+  const student=actor(3,'pupil');await assert.rejects(()=>getStudentReport({...student,role:'admin'},2),/여러 학생/);await assert.rejects(()=>getStudentReport({...student,loginIdentityId:999,loginSiteId:'unknown'}),/해제/);
+  let downloaded=false;globalThis.__portalTestEnv.BUCKET={get:async()=>{downloaded=true;return null;}};
+  globalThis.__portalTestUser=login('pupil');assert.equal((await read()).status,403);assert.equal((await POST(request({kind:'question',payload:{title:'연결 충돌'}}))).status,403);
+  const portal=await portalGET();assert.equal(portal.status,403);assert.equal(portal.headers.get('cache-control'),'private, no-store');assert.doesNotMatch(JSON.stringify(await portal.json()),/다른 가상 학생|0002|other-original/);
+  assert.equal((await guidancePOST(request({studentId:2,kind:'question',payload:{title:'다른 학생 접근'}}))).status,400);
+  assert.equal(db.sql.prepare('SELECT count(*) n FROM guidance_entries').get().n,0);
+  assert.equal((await originalGET(new Request('https://student.example/api/student-records/1'),{params:Promise.resolve({id:'1'})})).status,400);assert.equal(downloaded,false);
+  globalThis.__portalTestUser=login('owner');assert.equal((await portalGET()).status,200);
+  globalThis.__portalTestUser=login('pupil');globalThis.__portalTestEnv.TRACE_PORTAL_MODE='student';globalThis.__portalTestEnv.TRACE_HOME_SITE_ID='other-home';
   const before=db.sql.prepare('SELECT count(*) n FROM school_identities').get().n;const response=await read();assert.equal(response.status,503);assert.equal((await response.json()).state,'setup');assert.equal(db.sql.prepare('SELECT count(*) n FROM school_identities').get().n,before);
  }finally{cleanup(db);}
 });
+test('concurrent roster registration links a student account once and leaves no partial roster row',async()=>{
+ const db=fixture();try{
+  const owner=actor(1,'owner','admin'),body={action:'addStudent',email:'unlinked@example.test',name:'등록 대상'};
+  const results=await Promise.allSettled([performPortalAction(owner,{...body,classId:1,studentNumber:'A'}),performPortalAction(owner,{...body,classId:2,studentNumber:'B'})]);
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+  assert.equal(db.sql.prepare('SELECT count(*) n FROM students WHERE user_id=6').get().n,1);
+  assert.equal(db.sql.prepare('SELECT count(*) n FROM students').get().n,3);
+  assert.throws(()=>db.sql.exec('UPDATE students SET user_id=6 WHERE id=1'),/trace_student_account_in_use/);
+  assert.throws(()=>db.sql.exec("INSERT INTO students(class_id,user_id,student_number,name) VALUES(1,6,'C','중복')"),/trace_student_account_in_use/);
+ }finally{cleanup(db);}
+});
 function googleFixture(){const state=emptySchoolState(),admin=insertRow(state,'users',{authUserId:'owner',email:'owner@example.test',displayName:'관리자',role:'admin',status:'approved'}),pupil=insertRow(state,'users',{authUserId:'pupil',email:'pupil@example.test',displayName:'가상 학생',role:'student',status:'approved'});const cls=insertRow(state,'classes',{teacherId:admin.id,name:'가상 반',grade:2,schoolYear:2026,inviteCode:'PRIVATE'}),student=insertRow(state,'students',{classId:cls.id,studentNumber:'0001',name:'가상 학생',email:'pupil@example.test',userId:pupil.id}),other=insertRow(state,'students',{classId:cls.id,studentNumber:'0002',name:'다른 가상 학생',email:'new@example.test'});return{state,admin,pupil,student,other};}
+test('Google common access rejects duplicated links including archived students in other classes',()=>{
+ const {state,admin,pupil,student,other}=googleFixture();
+ const second=insertRow(state,'classes',{teacherId:admin.id,name:'다른 학급',grade:3,schoolYear:2026,inviteCode:'SECOND'});
+ other.userId=pupil.id;other.classId=second.id;other.status='archived';
+ assert.throws(()=>googlePortalData(state,pupil),/여러 학생/);
+ for(const id of [student.id,other.id])assert.throws(()=>googleStudentAccess(state,pupil,id),/여러 학생/);
+ assert.equal(googlePortalData(state,admin).students.length,2);
+});
 test('Google student projection isolates selected records and overview prioritizes revisions using latest state',()=>{
  const {state,admin,student,other}=googleFixture();
  const add=(key,who,status,revision=1,audience='student',dueDate='')=>insertRow(state,'guidanceEntries',{entityKey:key,revision,studentId:who.id,kind:'question',audience,payloadJson:JSON.stringify(guidancePayloadSchema.parse({title:key,status,dueDate})),createdBy:admin.id,actorName:'관리자',actorRole:'admin'});
