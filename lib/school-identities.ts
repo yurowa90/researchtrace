@@ -147,6 +147,28 @@ export async function readLegacyIdentityData(): Promise<IdentityData> {
   const [accounts, identities, events] = await db.batch([db.select().from(users), db.select().from(schoolIdentities), db.select().from(identityEvents)]);
   return { users: accounts, schoolIdentities: identities, identityEvents: events };
 }
+export function registerStudentIdentity(state: SchoolState, givenViewer: SchoolViewer, body: Record<string, unknown>) {
+  const viewer=currentIdentityActor(state.tables,givenViewer);
+  if(!isSchoolAdmin(viewer))throw new SiteAccessError("학교 관리자만 학생을 연결할 수 있습니다.");
+  const identity=state.tables.schoolIdentities.find(r=>r.id===Number(body.identityId));
+  if(!identity||identity.revision!==Number(body.expectedRevision)||identity.status!=="pending"||identity.userId!==null||identity.portalMode!=="student")throw new Error("새 학생의 연결 승인 대기 요청을 다시 확인하세요.");
+  const student=state.tables.students.find(s=>s.id===Number(body.studentId));
+  const email=identity.email.trim().toLowerCase(),note=typeof body.note==="string"?body.note.trim():"";
+  if(body.confirmStudent!==true||note.length<3||note.length>450)throw new Error("학생 본인 확인을 표시하고 확인 근거를 3~450자로 입력하세요.");
+  if(!student||student.isExample||!email||!identity.subject||student.email?.trim().toLowerCase()!==email)throw new Error("로그인 이메일과 일치하는 실제 등록 학생을 선택하세요. 명단의 이메일도 확인하세요.");
+  const accounts=state.tables.users.filter(u=>u.email.trim().toLowerCase()===email);
+  if(accounts.length>1)throw new Error("중복 학교 계정이 있습니다. 기존 연결을 먼저 확인하세요.");
+  let account=accounts[0];
+  if(account&&(account.role!=="student"||account.status==="suspended"))throw new Error("기존 계정의 역할과 정지 상태를 확인하세요.");
+  if(student.userId!==null&&student.userId!==account?.id)throw new Error("이 학생은 다른 학교 계정에 연결되어 있습니다.");
+  if(account&&state.tables.students.some(s=>s.id!==student.id&&s.userId===account.id))throw new Error("이 학교 계정은 다른 학생에게 이미 연결되어 있습니다.");
+  // Validate every condition before modifying the snapshot. Its account, roster
+  // link, identity approval and audit event are committed in one revision batch.
+  if(!account)account=insertRow(state,"users",{authUserId:`school:${crypto.randomUUID()}`,email,displayName:student.name,role:"student",status:"approved"});
+  else account.status="approved";
+  student.userId=account.id;
+  return applyIdentityReview(state,viewer,{...body,action:"approve",userId:account.id,note:`학생 #${student.id} 명단 연결 · ${note}`});
+}
 export async function saveLegacyIdentityReview(viewer: SchoolViewer, body: Record<string, unknown>) {
   const prepared = prepareIdentityReview(await readLegacyIdentityData(), viewer, body), db = getDb();
   // The unique identity+revision event makes competing reviews roll back the

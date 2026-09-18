@@ -18,7 +18,7 @@ export function roleAllowedOnSite(role: string, mode: PortalMode) {
   return role === "admin" || mode === "unified" || (mode === "student" && role === "student") || (mode === "teacher" && role === "teacher");
 }
 export const portalModeLabels = { unified: "통합 사이트", student: "학생 사이트", teacher: "교사 사이트", admin: "관리자 사이트" } as const;
-export function portalLink(key:"TRACE_ADMIN_PORTAL_URL"|"TRACE_TEACHER_PORTAL_URL") {
+export function portalLink(key:"TRACE_ADMIN_PORTAL_URL"|"TRACE_TEACHER_PORTAL_URL"|"TRACE_STUDENT_PORTAL_URL") {
   const value=runtimeValue(key);
   if(typeof value!=="string")return null;
   try {const url=new URL(value);return url.protocol==="https:"&&!url.username&&!url.password?url.origin:null;} catch {return null;}

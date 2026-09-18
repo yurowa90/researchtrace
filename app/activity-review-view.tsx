@@ -17,8 +17,8 @@ export function ActivityReviewView(p: Props) {
   const student = p.students.find(s => s.id === p.selectedStudentId) ?? p.students[0];
   const profile = p.data.profileSnapshots.find(s => s.studentId === student?.id && s.isActive);
   return <div className="space-y-5">
-    <div className="flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-bold">활동 모아보기</h1><p className="mt-3 max-w-3xl text-base leading-7 text-[#65768b]">창체·세특·독서·진로를 묶어 읽고, 여러 학년도에 걸쳐 이어지는 관심과 근거를 확인합니다.</p></div>{student && <div className="w-full sm:w-64"><Choice label="학생 선택" value={String(student.id)} onChange={v => p.onSelect(Number(v))} items={p.students.map(s => [String(s.id), `${s.name} · ${s.studentNumber}`])} /></div>}</div>
-    {profile && student ? <ActivityReader key={`${student.id}:${profile.id}`} data={p.data} studentId={student.id} snapshotId={profile.id} versionLabel={profile.versionLabel} onNavigate={p.onNavigate} /> : <p className="rounded-2xl border border-dashed bg-white p-8 text-base leading-7 text-[#65768b]">활동 분석이 아직 없습니다. Work 결과에 학생부 영역별 항목을 담아 반영하면 이곳에서 모아 볼 수 있습니다.</p>}
+    <div className="flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-bold">활동 모아보기</h1><p className="mt-3 max-w-3xl text-base leading-7 text-[#65768b]">창체·세특·독서·진로를 묶어 읽고, 여러 학년도에 걸쳐 이어지는 관심과 근거를 확인합니다.</p></div>{student && p.students.length>1 && <div className="w-full sm:w-64"><Choice label="학생 선택" value={String(student.id)} onChange={v => p.onSelect(Number(v))} items={p.students.map(s => [String(s.id), `${s.name} · ${s.studentNumber}`])} /></div>}</div>
+    {profile && student ? <ActivityReader key={`${student.id}:${profile.id}`} data={p.data} studentId={student.id} snapshotId={profile.id} versionLabel={profile.versionLabel} onNavigate={p.onNavigate} /> : <p className="rounded-2xl border border-dashed bg-white p-8 text-base leading-7 text-[#65768b]">활동 분석이 아직 없습니다. 담당 선생님이 학생부 영역별 분석 결과를 반영하면 이곳에서 모아 볼 수 있습니다.</p>}
   </div>;
 }
 

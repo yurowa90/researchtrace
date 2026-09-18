@@ -21,7 +21,7 @@ import { AcademicTrendChart } from "@/app/academic-trend-chart";
 
 type Props={data:PortalData;students:Student[];selectedStudentId:number|null;onSelect:(id:number)=>void};
 function selectedId(p:Props){return p.students.find(s=>s.id===p.selectedStudentId)?.id??p.students[0]?.id??0;}
-function Top({p,title,description}:{p:Props;title:string;description:string}){return <div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-bold">{title}</h1><p className="mt-3 max-w-3xl text-base leading-7 text-[#65768b]">{description}</p></div>{p.students.length>0&&<div className="w-full sm:w-64"><Choice label="학생 선택" value={String(selectedId(p))} onChange={v=>p.onSelect(Number(v))} items={p.students.map(s=>[String(s.id),`${s.name} · ${s.studentNumber}`])}/></div>}</div>;}
+function Top({p,title,description}:{p:Props;title:string;description:string}){return <div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-bold">{title}</h1><p className="mt-3 max-w-3xl text-base leading-7 text-[#65768b]">{description}</p></div>{p.students.length>1&&<div className="w-full sm:w-64"><Choice label="학생 선택" value={String(selectedId(p))} onChange={v=>p.onSelect(Number(v))} items={p.students.map(s=>[String(s.id),`${s.name} · ${s.studentNumber}`])}/></div>}</div>;}
 function Empty({children}:{children:React.ReactNode}){return <div className="rounded-2xl border border-dashed bg-white p-8 text-base leading-7 text-[#65768b]">{children}</div>;}
 
 export function AcademicsView(p:Props){
