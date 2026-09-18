@@ -3,7 +3,7 @@ import { getStorageConnection, readGoogleState } from "@/lib/google-bridge";
 import { googlePortalData } from "@/lib/google-school";
 import { currentIdentityActor, readLegacyIdentityData } from "@/lib/school-identities";
 import { isSchoolAdmin } from "@/lib/school-permissions";
-import { schoolSite } from "@/lib/site-runtime";
+import { portalLink, schoolSite } from "@/lib/site-runtime";
 import type { PortalData } from "@/lib/portal-types";
 
 export class AdminAccessError extends Error { constructor() { super("학교 관리자만 이 화면을 사용할 수 있습니다."); } }
@@ -11,6 +11,7 @@ export type AdminReport = {
   data: PortalData;
   storage: "legacy" | "migrating" | "google";
   isHome: boolean;
+  teacherUrl: string | null;
   pendingConnections: number;
   accounts: { id:number; displayName:string; email:string; role:string; status:string }[];
 };
@@ -27,7 +28,7 @@ export async function getAdminReport(viewer: Viewer): Promise<AdminReport> {
   const { actor, connection, state, tables } = await currentAdmin(viewer);
   return {
     data: state ? googlePortalData(state, actor) : await getPortalData(actor),
-    storage: connection?.state ?? "legacy", isHome: schoolSite().isHome,
+    storage: connection?.state ?? "legacy", isHome: schoolSite().isHome, teacherUrl:portalLink("TRACE_TEACHER_PORTAL_URL"),
     pendingConnections: tables.schoolIdentities.filter(r => r.status === "pending").length,
     accounts: tables.users.map(({id,displayName,email,role,status})=>({id,displayName,email,role,status})),
   };

@@ -16,10 +16,10 @@ const roles:Record<string,string>={student:"학생",teacher:"담임",admin:"관�
 
 function IdentityRow({row,report,busy,onReview}:{row:Link;report:Report;busy:boolean;onReview:(body:Record<string,unknown>)=>Promise<boolean>}) {
   const [accountId,setAccountId]=React.useState(row.userId?String(row.userId):"");
-  const [note,setNote]=React.useState("");
+  const [note,setNote]=React.useState(""),[confirmTeacher,setConfirmTeacher]=React.useState(false);
   const current=row.id===report.currentIdentityId;
   const account=report.accounts.find(a=>a.id===row.userId);
-  const send=async(action:string)=>{if(await onReview({identityId:row.id,expectedRevision:row.revision,action,userId:accountId?Number(accountId):null,note}))setNote("");};
+  const send=async(action:string)=>{if(await onReview({identityId:row.id,expectedRevision:row.revision,action,userId:accountId?Number(accountId):null,note,confirmTeacher}))setNote("");};
   return <div className="rounded-xl border border-[#dfe6ef] p-4">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{row.displayName} <span className="ml-2 text-sm font-normal text-[#65768b]">{modes[row.portalMode]}</span></p><p className="mt-1 break-all text-sm text-[#65768b]">{row.email}</p></div><span className={`rounded-md px-2 py-1 text-sm ${row.status==="approved"?"bg-emerald-50 text-emerald-800":"bg-slate-100 text-slate-700"}`}>{statuses[row.status]}{current?" · 현재 로그인":""}</span></div>
     <p className="mt-3 text-sm leading-6">학교 계정: {account?`${account.displayName} · ${roles[account.role]??account.role}${account.status!=="approved"?" · 학교 계정 승인 대기 또는 정지":""}`:"아직 연결되지 않았습니다."}</p>
@@ -28,6 +28,7 @@ function IdentityRow({row,report,busy,onReview}:{row:Link;report:Report;busy:boo
       {row.status!=="approved"&&<Select value={accountId} onValueChange={v=>setAccountId(v??"")} disabled={busy}><SelectTrigger aria-label={`${row.displayName} 연결할 학교 계정`} className="h-auto min-h-10 w-full"><SelectValue placeholder="본인 확인 후 기존 학교 계정 선택"/></SelectTrigger><SelectContent>{report.accounts.filter(a=>a.status==="approved"&&(!row.userId||a.id===row.userId)&&(a.role==="admin"||row.portalMode==="unified"||a.role===row.portalMode)).map(a=><SelectItem key={a.id} value={String(a.id)}>{a.displayName} · {roles[a.role]??a.role} · {a.email}</SelectItem>)}</SelectContent></Select>}
       <Input aria-label={`${row.displayName} 본인 확인 근거 또는 처리 사유`} value={note} maxLength={500} onChange={e=>setNote(e.target.value)} placeholder="본인 확인 근거 또는 연결 해제 사유" disabled={busy}/>
       <div className="flex flex-wrap gap-2">{row.status!=="approved"&&<Button size="sm" disabled={busy||!accountId||note.trim().length<3} onClick={()=>void send("approve")}>학교 계정에 연결</Button>}{row.status==="pending"&&<Button size="sm" variant="outline" disabled={busy||note.trim().length<3} onClick={()=>void send("reject")}>연결 거절</Button>}{row.status==="approved"&&<Button size="sm" variant="outline" disabled={busy||note.trim().length<3} onClick={()=>void send("revoke")}>이 사이트 연결 해제</Button>}</div>
+      {report.storage==="google"&&row.portalMode==="teacher"&&row.status==="pending"&&!row.userId&&<div className="rounded-xl bg-slate-50 p-4 text-sm leading-6">{report.accounts.some(a=>a.email.trim().toLowerCase()===row.email.trim().toLowerCase())?<p>같은 이메일의 학교 계정이 있습니다. 위 학교 계정 승인 화면에서 역할과 상태를 먼저 확인한 뒤 기존 계정에 연결하세요.</p>:<><p>기존 학교 계정이 없는 교사입니다. 본인 확인 후 교사 계정을 만들고 이 로그인에 연결할 수 있습니다.</p><label className="mt-3 flex items-start gap-2"><input type="checkbox" className="mt-1" checked={confirmTeacher} disabled={busy} onChange={e=>setConfirmTeacher(e.target.checked)}/>학교 소속 교사 본인을 확인했으며 교사 권한 부여에 동의합니다.</label><Button className="mt-3" size="sm" variant="outline" disabled={busy||!confirmTeacher||note.trim().length<3||note.trim().length>450} onClick={()=>void send("registerTeacher")}>새 교사 계정 생성 후 연결</Button><p className="mt-2 text-xs text-[#65768b]">위 확인 근거를 450자 이내로 남기세요. 연결 후 학급·담임 배정에서 담당 학급을 지정합니다.</p></>}</div>}
     </div>}
   </div>;
 }
@@ -43,7 +44,7 @@ export function SchoolAccessPanel({onChanged,refreshKey}:{onChanged?:()=>Promise
     finally{lock.current=false;setBusy(false);}
   };
   return <Card className="mb-5 border-[#c5d5e7]"><CardContent className="space-y-4 p-5">
-    <div className="flex flex-wrap justify-between gap-3"><div><p className="mb-1 text-sm font-semibold text-[#2457d6]">사이트 분리 준비 · 2단계</p><h2 className="text-xl font-bold">공통 계정 연결</h2></div><Button variant="outline" disabled={busy} onClick={()=>{setError("");void refresh().catch(e=>setError(e.message));}}>연결 현황 새로고침</Button></div>
+    <div className="flex flex-wrap justify-between gap-3"><div><p className="mb-1 text-sm font-semibold text-[#2457d6]">사이트별 로그인 연결</p><h2 className="text-xl font-bold">공통 계정 연결</h2></div><Button variant="outline" disabled={busy} onClick={()=>{setError("");void refresh().catch(e=>setError(e.message));}}>연결 현황 새로고침</Button></div>
     <p className="text-base leading-7 text-[#65768b]">사이트가 나뉘어도 기존 학교 계정과 학생 기록을 이어서 사용합니다. 다른 사이트에서 들어온 연결 요청은 본인 확인 후 승인합니다. 이메일이 같아도 자동으로 합치지 않습니다.</p>
     {error&&<p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{message&&<p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">{message}</p>}
     {report&&<>

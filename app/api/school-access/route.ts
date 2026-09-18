@@ -2,7 +2,7 @@ import { ensureViewer } from "@/lib/data";
 import { isSchoolAdmin } from "@/lib/school-permissions";
 import { schoolSite } from "@/lib/site-runtime";
 import { getStorageConnection, assertStorageWritable, readGoogleState, commitGoogleState } from "@/lib/google-bridge";
-import { currentIdentityActor, readLegacyIdentityData, saveLegacyIdentityReview, applyIdentityReview } from "@/lib/school-identities";
+import { currentIdentityActor, readLegacyIdentityData, saveLegacyIdentityReview, applyIdentityReview, registerTeacherIdentity } from "@/lib/school-identities";
 import { rejectCrossSiteWrite } from "@/lib/request-guard";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +36,9 @@ export async function POST(request: Request) {
     await assertStorageWritable();
     const body=await request.json() as Record<string,unknown>;
     if((await getStorageConnection())?.state==="google") {
-      const state=await readGoogleState();applyIdentityReview(state,viewer,body);await commitGoogleState(state);
+      const state=await readGoogleState();
+      if(body.action==="registerTeacher")registerTeacherIdentity(state,viewer,body);else applyIdentityReview(state,viewer,body);
+      await commitGoogleState(state);
     } else await saveLegacyIdentityReview(viewer,body);
     return Response.json({ok:true},{headers});
   } catch(error) {return failure(error);}

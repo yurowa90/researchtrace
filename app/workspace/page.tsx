@@ -2,10 +2,13 @@ import { ensureViewer } from "@/lib/data";
 import { isSchoolAdmin } from "@/lib/school-permissions";
 import { ResearchPortal } from "@/app/research-portal";
 import { chatGPTSignInPath } from "@/app/chatgpt-auth";
+import { portalLink, schoolSite } from "@/lib/site-runtime";
+import { TeacherPortal } from "@/app/teacher-portal";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "학생 자료 열람 | TRACE 학교 관리자" };
 export default async function StudentWorkspace() {
+  if(schoolSite().mode==="teacher")return <TeacherPortal adminUrl={portalLink("TRACE_ADMIN_PORTAL_URL")}/>;
   try {
     const viewer = await ensureViewer();
     if (!viewer) return <main className="mx-auto max-w-xl p-8"><h1 className="text-2xl font-bold">로그인이 필요합니다</h1><a className="mt-5 inline-block underline" href={chatGPTSignInPath("/workspace")} target="_top">관리자 계정으로 로그인</a></main>;

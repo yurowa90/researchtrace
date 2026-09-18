@@ -5,6 +5,9 @@ import type { SchoolState } from "@/lib/school-tables";
 import { runtimeValue, schoolSite } from "@/lib/site-runtime";
 
 export type StorageConnection = typeof storageConnection.$inferSelect;
+export class SharedStorageSetupError extends Error {
+  constructor() { super("학교 공통 구글 저장소 연결을 준비하고 있습니다. 관리자가 Google 저장소 연결을 완료하면 이 사이트에서 담당 학급 자료를 사용할 수 있습니다."); }
+}
 export class GoogleConflictError extends Error {
   constructor() { super("다른 변경이 먼저 저장되었습니다. 최신 자료를 불러온 뒤 다시 시도하세요."); this.name = "GoogleConflictError"; }
 }
@@ -12,7 +15,7 @@ export async function getStorageConnection() {
   const site = schoolSite();
   if (!site.isHome) {
     const raw = runtimeValue("TRACE_SHARED_GOOGLE_CONNECTION");
-    if (typeof raw !== "string") throw new Error("이 사이트에 공통 구글 저장소 연결이 필요합니다. 학교 관리자에게 연결 상태 확인을 요청하세요.");
+    if (typeof raw !== "string") throw new SharedStorageSetupError();
     let shared: { endpoint?: unknown; secret?: unknown; homeSiteId?: unknown };
     try { shared = JSON.parse(raw); } catch { throw new Error("공통 구글 저장소 설정 형식을 확인하세요."); }
     if (shared?.homeSiteId !== site.homeSiteId || typeof shared.secret !== "string" || shared.secret.length < 40) throw new Error("공통 구글 저장소의 기준 사이트와 연결 키를 확인하세요.");

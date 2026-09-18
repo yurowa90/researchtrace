@@ -94,8 +94,8 @@ export async function ensureSharedIdentity(auth: PlatformLogin, site: SchoolSite
 
 export function currentIdentityActor(t: IdentityData, viewer: SchoolViewer) {
   const actor = t.users.find(u => u.id === viewer.id && u.authUserId === viewer.authUserId);
-  if (!actor) throw new Error("학교 계정 권한을 확인할 수 없습니다.");
-  if (viewer.loginIdentityId && !t.schoolIdentities.some(r => r.id === viewer.loginIdentityId && r.siteId === viewer.loginSiteId && r.userId === actor.id && r.status === "approved")) throw new Error("사이트 계정 연결이 해제되었습니다. 다시 로그인하세요.");
+  if (!actor) throw new SiteAccessError("학교 계정 권한을 확인할 수 없습니다.");
+  if (viewer.loginIdentityId && !t.schoolIdentities.some(r => r.id === viewer.loginIdentityId && r.siteId === viewer.loginSiteId && r.userId === actor.id && r.status === "approved")) throw new SiteAccessError("사이트 계정 연결이 해제되었습니다. 다시 로그인하세요.");
   return { ...actor, loginIdentityId: viewer.loginIdentityId, loginSiteId: viewer.loginSiteId };
 }
 export function prepareIdentityReview(t: IdentityData, givenViewer: SchoolViewer, body: Record<string, unknown>) {
@@ -127,6 +127,20 @@ export function applyIdentityReview(state: SchoolState, viewer: SchoolViewer, bo
   Object.assign(prepared.identity, prepared.update);
   insertRow(state, "identityEvents", prepared.event);
   return { ok: true };
+}
+export function registerTeacherIdentity(state: SchoolState, givenViewer: SchoolViewer, body: Record<string, unknown>) {
+  const viewer=currentIdentityActor(state.tables,givenViewer);
+  if(!isSchoolAdmin(viewer))throw new SiteAccessError("학교 관리자만 새 교사 계정을 등록할 수 있습니다.");
+  const identity=state.tables.schoolIdentities.find(r=>r.id===Number(body.identityId));
+  if(!identity||identity.revision!==Number(body.expectedRevision)||identity.status!=="pending"||identity.userId!==null||identity.portalMode!=="teacher")throw new Error("새 교사의 연결 승인 대기 요청을 다시 확인하세요.");
+  const email=identity.email.trim().toLowerCase(),note=typeof body.note==="string"?body.note.trim():"";
+  if(!email||!identity.displayName.trim()||!identity.subject)throw new Error("로그인 요청 정보를 확인하세요.");
+  if(note.length<3||note.length>450||body.confirmTeacher!==true)throw new Error("학교 소속 교사 본인 확인을 표시하고 확인 근거를 3~450자로 입력하세요.");
+  if(state.tables.users.some(u=>u.email.trim().toLowerCase()===email))throw new Error("같은 이메일의 학교 계정이 있습니다. 기존 계정의 역할과 승인 상태를 확인한 뒤 연결하세요.");
+  // A school ID is independent of both Sites' login subjects. Never merge by email.
+  // Account, binding and audit event are committed in one revision-checked Sheets batch.
+  const account=insertRow(state,"users",{authUserId:`school:${crypto.randomUUID()}`,email,displayName:identity.displayName,role:"teacher",status:"approved"});
+  return applyIdentityReview(state,viewer,{...body,action:"approve",userId:account.id,note:`새 교사 계정 등록 · ${note}`});
 }
 export async function readLegacyIdentityData(): Promise<IdentityData> {
   const db = getDb();
