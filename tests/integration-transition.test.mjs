@@ -21,10 +21,10 @@ import {prepareOperation,applyPreparedOperation} from '../lib/admin-operations.t
 const endpoint='https://script.google.com/macros/s/'+'t'.repeat(32)+'/exec';
 const config={id:1,state:'legacy',secret:'test-only-key-'.repeat(5),endpoint,ownerAuthUserId:'owner',updatedAt:''};
 test('health checks all tables and ordered columns, school scope and storage owner',()=>{
- const health={version:1,homeSiteId:'home',schemaTables:tableNames,schemaColumns:tableColumns,ownerEmail:'OWNER@example.test',spreadsheetId:'sheet',folderId:'folder'};
+ const health={version:1,fileVerificationVersion:1,homeSiteId:'home',schemaTables:tableNames,schemaColumns:tableColumns,ownerEmail:'OWNER@example.test',spreadsheetId:'sheet',folderId:'folder'};
  const locations={ownerEmail:'owner@example.test',spreadsheetId:'sheet',folderId:'folder'};
  assert.equal(inspectGoogleHealth(health,'home',locations).updated,true);
- for(const value of [{...health,schemaTables:tableNames.filter(n=>n!=='schoolOperations')},{...health,schemaColumns:undefined},{...health,schemaColumns:{...tableColumns,students:[...tableColumns.students].reverse()}},{...health,version:2},{...health,homeSiteId:'other'},{...health,ownerEmail:undefined},{...health,spreadsheetId:'other'}])assert.equal(inspectGoogleHealth(value,'home',locations).updated,false);
+ for(const value of [{...health,fileVerificationVersion:undefined},{...health,schemaTables:tableNames.filter(n=>n!=='schoolOperations')},{...health,schemaColumns:undefined},{...health,schemaColumns:{...tableColumns,students:[...tableColumns.students].reverse()}},{...health,version:2},{...health,homeSiteId:'other'},{...health,ownerEmail:undefined},{...health,spreadsheetId:'other'}])assert.equal(inspectGoogleHealth(value,'home',locations).updated,false);
 });
 test('migration backup receipt rejects changed data, expiry, tampering and another owner, endpoint or school',async()=>{
  const {tables}=emptySchoolState();tables.users=[{id:1,authUserId:'owner'},{id:2,authUserId:'pupil'}];
@@ -55,7 +55,10 @@ function integrationFixture(){
  const cleanup=()=>{globalThis.fetch=oldFetch;globalThis.__portalTestUser=null;delete env.TRACE_GOOGLE_LOCATIONS;delete env.DB;delete env.BUCKET;db.sql.close();};
  return {db,script,env,state,cleanup};
 }
-const post=body=>storagePOST(new Request('https://school.example/api/storage',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://school.example'},body:JSON.stringify(body)}));
+const post=body=>{
+ const migrationId=globalThis.__portalTestEnv.DB?.sql.prepare('SELECT migration_id FROM storage_connection').get()?.migration_id;
+ return storagePOST(new Request('https://school.example/api/storage',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://school.example'},body:JSON.stringify({migrationId,...body})}));
+};
 async function ok(response){const data=await response.json();assert.equal(response.status,200,JSON.stringify(data));return data;}
 async function backup(){const response=await backupGET();assert.equal(response.status,200);const receipt=response.headers.get('X-TRACE-Migration-Backup');assert.ok(receipt);assert.equal((await verifySchoolBackup(new Uint8Array(await response.arrayBuffer()))).fileCount,1);return receipt;}
 
@@ -103,6 +106,80 @@ test('migration endpoints reject other roles, unauthenticated requests and cross
   globalThis.__portalTestUser={userId:'teacher',email:'teacher@example.test',displayName:'가상 교사'};
   assert.equal((await readinessGET()).status,403);assert.equal((await backupGET()).status,403);assert.equal((await post({action:'prepare'})).status,400);
   const response=await storagePOST(new Request('https://school.example/api/storage',{method:'POST',headers:{Origin:'https://other.example','Content-Type':'application/json'},body:JSON.stringify({action:'start'})}));assert.equal(response.status,403);assert.equal(f.state(),'legacy');
+ }finally{f.cleanup();}
+});
+
+test('same-size corruption of a copied original blocks reuse and final activation',async()=>{
+ const f=integrationFixture();try{
+  await ok(await post({action:'connect',endpoint}));const started=await ok(await post({action:'start',backupReceipt:await backup()}));
+  await ok(await post({action:'copyFile',migrationId:started.migrationId,index:0}));
+  const [id,file]=[...f.script.files.entries()][0];const damaged=file.getBlob().getBytes();damaged[0]^=1;
+  f.script.files.set(id,{...file,getBlob:()=>({getBytes:()=>damaged})});
+  assert.equal((await post({action:'copyFile',migrationId:started.migrationId,index:0})).status,400);
+  assert.equal((await post({action:'finish',migrationId:started.migrationId})).status,400);assert.equal(f.state(),'migrating');
+ }finally{f.cleanup();}
+});
+
+test('cancel cannot reopen legacy writes while final data commit is in flight',async()=>{
+ const f=integrationFixture();try{
+  await ok(await post({action:'connect',endpoint}));const started=await ok(await post({action:'start',backupReceipt:await backup()}));
+  await ok(await post({action:'copyFile',migrationId:started.migrationId,index:0}));const send=globalThis.fetch;let cancelStatus;
+  globalThis.fetch=async(url,options)=>{const req=JSON.parse(JSON.parse(options.body).payload);if(req.operation==='commit'){
+    const canceled=await post({action:'cancel',migrationId:started.migrationId});cancelStatus=canceled.status;
+    if(canceled.ok)f.db.sql.exec("UPDATE students SET student_number='LOST-WRITE'");
+  }return send(url,options);};
+  await ok(await post({action:'finish',migrationId:started.migrationId}));assert.equal(cancelStatus,400);assert.equal(f.state(),'google');
+  assert.equal(f.db.sql.prepare('SELECT student_number FROM students').get().student_number,'001');
+ }finally{f.cleanup();}
+});
+
+test('a lost commit response keeps legacy writes frozen and retries by verifying the committed copy',async()=>{
+ const f=integrationFixture();try{
+  await ok(await post({action:'connect',endpoint}));await ok(await post({action:'start',backupReceipt:await backup()}));await ok(await post({action:'copyFile',index:0}));
+  const send=globalThis.fetch;let commits=0;
+  globalThis.fetch=async(url,options)=>{const req=JSON.parse(JSON.parse(options.body).payload);const response=await send(url,options);if(req.operation==='commit'&&++commits===1)throw new Error('simulated lost response');return response;};
+  assert.equal((await post({action:'finish'})).status,400);assert.equal(f.state(),'migrating');
+  assert.equal(f.db.sql.prepare('SELECT migration_phase FROM storage_connection').get().migration_phase,'committing');
+  assert.equal((await post({action:'cancel'})).status,400);assert.throws(()=>f.db.sql.exec("UPDATE students SET student_number='unsafe'"),/frozen/);
+  await ok(await post({action:'finish'}));assert.equal(f.state(),'google');assert.equal(commits,1);
+ }finally{f.cleanup();}
+});
+test('canceled migration IDs and missing IDs cannot mutate a new migration',async()=>{
+ const f=integrationFixture();try{
+  await ok(await post({action:'connect',endpoint}));const receipt=await backup();
+  const first=await ok(await post({action:'start',backupReceipt:receipt}));await ok(await post({action:'cancel',migrationId:first.migrationId}));
+  const second=await ok(await post({action:'start',backupReceipt:receipt}));assert.notEqual(first.migrationId,second.migrationId);
+  for(const migrationId of [first.migrationId,undefined])for(const action of ['start','copyFile','finish','cancel'])assert.equal((await post({action,migrationId,index:0})).status,400);
+  assert.equal(f.state(),'migrating');assert.equal(f.script.files.size,0);await ok(await post({action:'cancel',migrationId:second.migrationId}));assert.equal(f.state(),'legacy');
+ }finally{f.cleanup();}
+});
+test('an expired verifier cannot commit after another verifier claims its lease',async()=>{
+ const f=integrationFixture();let release;try{
+  await ok(await post({action:'connect',endpoint}));await ok(await post({action:'start',backupReceipt:await backup()}));await ok(await post({action:'copyFile',index:0}));
+  const send=globalThis.fetch;let entered,held=false,commits=0;const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>release=resolve);
+  globalThis.fetch=async(url,options)=>{const req=JSON.parse(JSON.parse(options.body).payload);if(req.operation==='checkFiles'&&!held){held=true;entered();await hold;}if(req.operation==='commit')commits++;return send(url,options);};
+  const old=post({action:'finish'});await reached;
+  assert.equal((await post({action:'cancel'})).status,400);assert.equal((await post({action:'finish'})).status,400);
+  // Simulate worker termination/lease expiry without a wall-clock sleep.
+  f.db.sql.exec('UPDATE storage_connection SET migration_lease_until=0');
+  await ok(await post({action:'finish'}));release();assert.equal((await old).status,400);assert.equal(commits,1);assert.equal(f.state(),'google');
+ }finally{release?.();f.cleanup();}
+});
+test('an endpoint health response cannot overwrite connection settings after migration starts',async()=>{
+ const f=integrationFixture();let release;try{
+  await ok(await post({action:'connect',endpoint}));const receipt=await backup(),send=globalThis.fetch;
+  let entered,held=false;const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>release=resolve);
+  globalThis.fetch=async(url,options)=>{const req=JSON.parse(JSON.parse(options.body).payload);if(req.operation==='health'&&!held){held=true;entered();await hold;}return send(url,options);};
+  const connect=post({action:'connect',endpoint});await reached;
+  await ok(await post({action:'start',backupReceipt:receipt}));release();assert.equal((await connect).status,400);assert.equal(f.state(),'migrating');
+ }finally{release?.();f.cleanup();}
+});
+test('deleted copied files cannot be accepted merely because the index still lists them',async()=>{
+ const f=integrationFixture();try{
+  await ok(await post({action:'connect',endpoint}));await ok(await post({action:'start',backupReceipt:await backup()}));await ok(await post({action:'copyFile',index:0}));f.script.files.clear();
+  assert.equal((await post({action:'finish'})).status,400);assert.equal(f.state(),'migrating');
+  assert.equal(f.db.sql.prepare('SELECT migration_phase FROM storage_connection').get().migration_phase,'copying');
+  await ok(await post({action:'cancel'}));assert.equal(f.state(),'legacy');
  }finally{f.cleanup();}
 });
 

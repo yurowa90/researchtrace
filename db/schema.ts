@@ -58,6 +58,10 @@ export const storageConnection = sqliteTable("storage_connection", {
   endpoint: text("endpoint").notNull().default(""),
   secret: text("secret").notNull(),
   ownerAuthUserId: text("owner_auth_user_id").notNull(),
+  migrationId: text("migration_id").notNull().default(""),
+  migrationPhase: text("migration_phase", { enum: ["idle", "copying", "verifying", "committing"] }).notNull().default("idle"),
+  migrationToken: text("migration_token").notNull().default(""),
+  migrationLeaseUntil: integer("migration_lease_until").notNull().default(0),
   updatedAt: text("updated_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 });
 

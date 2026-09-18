@@ -2,6 +2,9 @@ export type SchoolRole = "student" | "teacher" | "admin";
 type Actor = { id: number; role: string; status: string };
 type Classroom = { id: number; teacherId: number };
 type Student = { classId: number; userId: number | null };
+export class StudentLinkConflictError extends Error {
+  constructor() { super("계정이 여러 학생에게 연결되어 자료 접근을 중단했습니다. 담임 또는 관리자에게 계정 연결 수정을 요청하세요."); }
+}
 
 export function approvedSchoolRole(viewer: Actor | null | undefined): SchoolRole | null {
   if (!viewer || !Number.isSafeInteger(viewer.id) || viewer.id < 1 || viewer.status !== "approved") return null;
@@ -9,6 +12,12 @@ export function approvedSchoolRole(viewer: Actor | null | undefined): SchoolRole
 }
 export function isSchoolAdmin(viewer: Actor | null | undefined) { return approvedSchoolRole(viewer) === "admin"; }
 export function isSchoolStaff(viewer: Actor | null | undefined) { const role = approvedSchoolRole(viewer); return role === "admin" || role === "teacher"; }
+// Check every link, including archived students, before narrowing by class or status.
+export function assertSingleStudentLink(viewer: Actor, linkedCount: number) {
+  if (approvedSchoolRole(viewer) === "student" && linkedCount > 1) {
+    throw new StudentLinkConflictError();
+  }
+}
 export function canManageSchoolClass(viewer: Actor, classroom: Classroom | null | undefined) {
   const role = approvedSchoolRole(viewer);
   return Boolean(classroom && (role === "admin" || (role === "teacher" && classroom.teacherId === viewer.id)));

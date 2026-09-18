@@ -24,8 +24,8 @@ export async function GET() {
       try {
         const result = inspectGoogleHealth(await bridgeCall<GoogleHealth>("health", {}, config), site.homeSiteId, site.isHome ? getGoogleLocations() : undefined);
         checks.push({ id: "schema", title: "저장소 응답·전체 시트 형식", state: result.updated ? "pass" : "action",
-          detail: result.updated ? "서명된 요청에 응답했고 학교 기준과 모든 시트·열이 일치합니다." : `학교 기준 또는 시트 형식을 확인해야 합니다. 누락 ${result.missingTables.length}개 · 열 불일치 ${result.mismatchedTables.length}개`,
-          next: result.updated ? "학년 전환·로그인 연결·지도 이력 시트도 검사했습니다." : "최신 설치 코드로 setupTrace 실행 후 웹 앱을 새 버전으로 갱신하세요." });
+          detail: result.updated ? "학교 기준·전체 시트·열이 일치하며 원본 내용 검증 기능이 준비됐습니다." : `학교 기준 ${result.identityMatches ? "일치" : "확인 필요"} · 누락 ${result.missingTables.length}개 · 열 불일치 ${result.mismatchedTables.length}개 · 원본 검증 기능 ${result.fileVerificationReady ? "준비됨" : "갱신 필요"}`,
+          next: result.updated ? "학년 전환·로그인 연결·지도 이력 시트도 검사했습니다. 원본 파일 자체는 이전 완료 또는 전체 백업 때 검증합니다." : "최신 설치 코드로 setupTrace 실행 후 웹 앱을 새 버전으로 갱신하세요." });
       } catch {
         checks.push({ id: "schema", title: "저장소 응답·전체 시트 형식", state: "action", detail: "Google 저장소 응답을 확인하지 못했습니다.", next: "웹 앱 URL·배포 버전·실행 권한을 확인한 뒤 다시 점검하세요." });
       }

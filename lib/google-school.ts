@@ -1,7 +1,7 @@
 import { latestGuidance, decodeGuidance } from "@/lib/guidance";
 import { currentIdentityActor, ensureSharedIdentity } from "@/lib/school-identities";
 import { schoolSite } from "@/lib/site-runtime";
-import { approvedSchoolRole, canAccessSchoolStudent, canManageSchoolClass, isSchoolAdmin, isSchoolStaff } from "@/lib/school-permissions";
+import { approvedSchoolRole, assertSingleStudentLink, canAccessSchoolStudent, canManageSchoolClass, isSchoolAdmin, isSchoolStaff } from "@/lib/school-permissions";
 import { hydrateProfileDetails, profileEvidenceIssues } from "@/lib/profile-evidence";
 import { guidanceFromState } from "@/lib/guidance-store";
 import type { Viewer } from "@/lib/data";
@@ -30,6 +30,7 @@ export function currentGoogleViewer(state: SchoolState, viewer: Viewer): Viewer 
 
 export function googleStudentAccess(state: SchoolState, viewer: Viewer, studentId: number) {
   viewer = currentGoogleViewer(state, viewer);
+  assertSingleStudentLink(viewer, state.tables.students.filter(row => row.userId === viewer.id).length);
   const student = state.tables.students.find(row => row.id === studentId);
   const classroom = state.tables.classes.find(row => row.id === student?.classId);
   if (!student || !classroom || !canAccessSchoolStudent(viewer, student, classroom)) throw new Error("이 학생 자료에 접근할 수 없습니다.");
@@ -46,6 +47,7 @@ export async function ensureGoogleViewer(auth: { userId: string; email: string; 
 
 export function googlePortalData(state: SchoolState, givenViewer: Viewer): PortalData {
   const viewer = currentGoogleViewer(state, givenViewer), t = state.tables;
+  assertSingleStudentLink(viewer, t.students.filter(row => row.userId === viewer.id).length);
   const approved = Boolean(approvedSchoolRole(viewer)), staff = isSchoolStaff(viewer);
   const classes = approved ? t.classes.filter(row => viewer.role === "admin" || (viewer.role === "teacher" ? row.teacherId === viewer.id : t.students.some(s => s.classId === row.id && s.userId === viewer.id))) : [];
   const classIds = new Set(classes.map(row => row.id));

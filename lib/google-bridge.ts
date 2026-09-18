@@ -19,7 +19,7 @@ export async function getStorageConnection() {
     let shared: { endpoint?: unknown; secret?: unknown; homeSiteId?: unknown };
     try { shared = JSON.parse(raw); } catch { throw new Error("공통 구글 저장소 설정 형식을 확인하세요."); }
     if (shared?.homeSiteId !== site.homeSiteId || typeof shared.secret !== "string" || shared.secret.length < 40) throw new Error("공통 구글 저장소의 기준 사이트와 연결 키를 확인하세요.");
-    return { id: 1, state: "google" as const, endpoint: validateGoogleEndpoint(shared.endpoint), secret: shared.secret, ownerAuthUserId: "", updatedAt: "" };
+    return { id: 1, state: "google" as const, endpoint: validateGoogleEndpoint(shared.endpoint), secret: shared.secret, ownerAuthUserId: "", updatedAt: "", migrationId: "", migrationPhase: "idle" as const, migrationToken: "", migrationLeaseUntil: 0 };
   }
   const [row] = await getDb().select().from(storageConnection).where(eq(storageConnection.id, 1)).limit(1);
   return row ?? null;
