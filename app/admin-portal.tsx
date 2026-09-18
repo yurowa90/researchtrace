@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { BookOpenText, ClipboardList, Database, GraduationCap, LayoutDashboard, RefreshCw, ShieldCheck, Users, Plus, Upload, ArrowUpRight } from "lucide-react";
+import { BookOpenText, ChartColumn, Archive, History, ArrowRightLeft, ClipboardList, Database, GraduationCap, LayoutDashboard, RefreshCw, ShieldCheck, Users, Plus, Upload, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,14 +14,20 @@ import { SchoolAccessPanel } from "@/app/school-access-panel";
 import { SchoolBaselinePanel } from "@/app/school-baseline-panel";
 import { SchoolBackupPanel } from "@/app/school-backup-panel";
 import { StorageSettings } from "@/app/storage-settings";
+import { AdminResearch, AdminArchive } from "@/app/admin-research";
+import { AdminOperations, OperationHistory } from "@/app/admin-operations";
 import { AdminAccounts, AdminClasses, AdminGuide, StudentStatusDialog } from "@/app/admin-panels";
 import { adminOverview, adminSections, studentWorkspaceUrl, type AdminSection } from "@/lib/admin-overview";
 import { studentReadiness } from "@/lib/portal-workflow";
 import type { AdminReport } from "@/lib/admin-data";
 import type { Student } from "@/lib/portal-types";
 
-const icons = { overview:LayoutDashboard, students:Users, classes:GraduationCap, accounts:ShieldCheck, references:BookOpenText, storage:Database, guide:ClipboardList };
+const icons = { research:ChartColumn, archive:Archive, operations:ArrowRightLeft, history:History, overview:LayoutDashboard, students:Users, classes:GraduationCap, accounts:ShieldCheck, references:BookOpenText, storage:Database, guide:ClipboardList };
 const descriptions: Record<AdminSection,string> = {
+  research:"학교 전체의 연구 키워드와 기록 학년도별 자료 축적 현황을 살펴봅니다.",
+  archive:"재학생과 졸업생의 원본·연구 흐름·이전 분석을 한곳에서 찾습니다.",
+  operations:"대상과 변경 내용을 확인하고 기존 기록을 이어서 진급·졸업을 처리합니다.",
+  history:"학적과 담당 교사의 변경 사유·처리자·변경 전후를 확인합니다.",
   overview:"등록·자료 준비·계정 연결 상태를 확인하고 필요한 작업으로 이동합니다.",
   students:"학생을 등록하고 재학생·졸업생의 누적 자료를 관리합니다.",
   classes:"학년도별 학급을 만들고 승인된 교사에게 담당 학급을 배정합니다.",
@@ -40,6 +46,7 @@ export function AdminPortal() {
   const [busy,setBusy]=React.useState(false), [refreshing,setRefreshing]=React.useState(false);
   const lock=React.useRef(false), reloadLock=React.useRef(false);
   const [classDialog,setClassDialog]=React.useState(false), [studentDialog,setStudentDialog]=React.useState(false), [bulkDialog,setBulkDialog]=React.useState(false);
+  const [archiveQuery,setArchiveQuery]=React.useState("");
   const [statusStudent,setStatusStudent]=React.useState<Student|null>(null);
   const [query,setQuery]=React.useState(""), [year,setYear]=React.useState("all"), [classId,setClassId]=React.useState("all");
   const [status,setStatus]=React.useState("active"), [task,setTask]=React.useState("all"), [showExamples,setShowExamples]=React.useState(false), [page,setPage]=React.useState(1);
@@ -100,7 +107,7 @@ export function AdminPortal() {
     <Toaster position="top-right" richColors/>
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-[#102b55] p-5 text-white lg:flex">
       <a href="/" className="flex items-center gap-3 py-2"><BookOpenText className="size-6 text-[#77e0c2]"/><span><span className="block text-xl font-bold tracking-tight">TRACE</span><span className="text-sm text-blue-100/80">학교 관리자</span></span></a>
-      <nav aria-label="관리자 메뉴" className="mt-8 flex-1 space-y-1">{adminSections.map(item=>{const Icon=icons[item.id];return <button type="button" key={item.id} aria-current={section===item.id?"page":undefined} onClick={()=>navigate(item.id)} className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${section===item.id?"bg-white font-semibold text-[#102b55]":"text-blue-50/85 hover:bg-white/10"}`}><Icon className="size-4 shrink-0"/>{item.label}</button>;})}</nav>
+      <nav aria-label="관리자 메뉴" className="mt-6 flex-1 space-y-1 overflow-y-auto">{adminSections.map(item=>{const Icon=icons[item.id];return <button type="button" key={item.id} aria-current={section===item.id?"page":undefined} onClick={()=>navigate(item.id)} className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${section===item.id?"bg-white font-semibold text-[#102b55]":"text-blue-50/85 hover:bg-white/10"}`}><Icon className="size-4 shrink-0"/>{item.label}</button>;})}</nav>
       <a href="/workspace" className="flex min-h-11 items-center justify-between rounded-xl border border-white/20 p-3 text-sm hover:bg-white/10">학생 자료 열람<ArrowUpRight className="size-4"/></a>
       <p className="mt-4 text-sm leading-6 text-blue-100/75">학교 전체와 졸업생 자료를 관리합니다.</p>
     </aside>
@@ -121,10 +128,14 @@ export function AdminPortal() {
           <div className="flex flex-wrap gap-2"><Button onClick={()=>setBulkDialog(true)} disabled={disabled||!data.classes.length}><Upload className="size-4"/>엑셀 일괄 등록</Button><Button variant="outline" onClick={()=>setStudentDialog(true)} disabled={disabled||!data.classes.length}><Plus className="size-4"/>학생 1명 등록</Button></div>
           {!data.classes.length&&<p className="text-sm">먼저 학급·담임 배정에서 학급을 추가하세요.</p>}
           <section className="rounded-2xl border border-[#dfe6ef] bg-white p-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><label className="space-y-2 text-sm"><span className="block">학번·이름·이메일</span><Input className="h-11" value={query} onChange={e=>setQuery(e.target.value)} placeholder="학생 검색"/></label><label className="space-y-2 text-sm"><span className="block">학년도</span><select className={`${nativeSelect} w-full`} value={year} onChange={e=>{setYear(e.target.value);setClassId("all");}}><option value="all">전체 학년도</option>{years.map(y=><option key={y} value={y}>{y}학년도</option>)}</select></label><label className="space-y-2 text-sm"><span className="block">학급</span><select className={`${nativeSelect} w-full`} value={classId} onChange={e=>setClassId(e.target.value)}><option value="all">전체 학급</option>{data.classes.filter(c=>year==="all"||c.schoolYear===Number(year)).map(c=><option key={c.id} value={c.id}>{c.schoolYear} · {c.name}</option>)}</select></label><label className="space-y-2 text-sm"><span className="block">재학 상태</span><select className={`${nativeSelect} w-full`} value={status} onChange={e=>setStatus(e.target.value)}><option value="all">전체 상태</option><option value="active">재학생</option><option value="graduated">졸업생</option><option value="archived">보관 학생</option></select></label><label className="space-y-2 text-sm"><span className="block">자료 준비</span><select className={`${nativeSelect} w-full`} value={task} onChange={e=>setTask(e.target.value)}><option value="all">전체</option><option value="records">기본 학생부 부족</option><option value="profiles">활성 분석 없음</option><option value="accounts">학교 계정 미연결</option><option value="ready">원본·분석 준비됨</option></select></label></div><div className="mt-4 flex flex-wrap items-center gap-3 text-sm"><p>검색 결과 {matching.length}명</p><label className="ml-auto flex items-center gap-2"><Checkbox checked={showExamples} onCheckedChange={v=>setShowExamples(v===true)}/>예시 학생 포함</label><Button variant="ghost" size="sm" onClick={()=>{setQuery("");setYear("all");setClassId("all");setStatus("active");setTask("all");setShowExamples(false);}}>조건 초기화</Button></div></section>
-          <div className="overflow-x-auto rounded-2xl border border-[#dfe6ef] bg-white"><table className="w-full min-w-[760px] text-left text-sm"><caption className="sr-only">학생 관리 목록</caption><thead className="border-b bg-[#edf2f8]"><tr>{["학생","학급","준비 상태","계정·재학","작업"].map(h=><th key={h} className="px-5 py-4 font-semibold">{h}</th>)}</tr></thead><tbody>{rows.map(s=>{const ready=studentReadiness(data,s);return <tr key={s.id} className="border-b last:border-0"><td className="px-5 py-4"><a className="font-semibold underline underline-offset-4" href={studentWorkspaceUrl(s.id)}>{s.name}</a>{s.isExample&&<span className="ml-2 text-[#65768b]">예시</span>}<p className="mt-1 text-[#65768b]">{s.studentNumber}</p><p className="mt-1 break-all text-[#65768b]">{s.email||"이메일 미등록"}</p></td><td className="px-5 py-4">{ready.classroom?.name??"학급 확인 필요"}<p className="mt-1 text-[#65768b]">{ready.classroom?.schoolYear}학년도</p></td><td className="px-5 py-4"><p>{ready.missingGrades.length?`${ready.missingGrades.join("·")}학년 원본 필요`:"기본 원본 등록"}</p><p className="mt-1 text-[#65768b]">{ready.profile?"활성 분석 있음":"활성 분석 없음"}</p>{ready.currentGradeIncluded&&<p className="mt-1 text-[#65768b]">현재 학년 원본 포함</p>}</td><td className="px-5 py-4"><p>{s.userId?"학교 계정 연결":"학교 계정 미연결"}</p><p className="mt-1 text-[#65768b]">{s.status==="active"?"재학":s.status==="graduated"?`${s.graduatedYear??""}년 졸업`:"보관"}</p></td><td className="px-5 py-4"><div className="flex flex-col items-start gap-2"><Button asChild size="sm" variant="outline"><a href={studentWorkspaceUrl(s.id,"records")}>원본·분석 열람</a></Button><Button size="sm" variant="ghost" disabled={disabled} onClick={()=>setStatusStudent(s)}>{s.status==="active"?"졸업 처리":"재학으로 복원"}</Button></div></td></tr>;})}</tbody></table>{!rows.length&&<p className="p-8 text-center text-base leading-7 text-[#65768b]">조건에 맞는 학생이 없습니다. 검색 조건을 초기화하거나 학생을 등록하세요.</p>}</div>
+          <div className="overflow-x-auto rounded-2xl border border-[#dfe6ef] bg-white"><table className="w-full min-w-[760px] text-left text-sm"><caption className="sr-only">학생 관리 목록</caption><thead className="border-b bg-[#edf2f8]"><tr>{["학생","학급","준비 상태","계정·재학","작업"].map(h=><th key={h} className="px-5 py-4 font-semibold">{h}</th>)}</tr></thead><tbody>{rows.map(s=>{const ready=studentReadiness(data,s);return <tr key={s.id} className="border-b last:border-0"><td className="px-5 py-4"><a className="font-semibold underline underline-offset-4" href={studentWorkspaceUrl(s.id)}>{s.name}</a>{s.isExample&&<span className="ml-2 text-[#65768b]">예시</span>}<p className="mt-1 text-[#65768b]">{s.studentNumber}</p><p className="mt-1 break-all text-[#65768b]">{s.email||"이메일 미등록"}</p></td><td className="px-5 py-4">{ready.classroom?.name??"학급 확인 필요"}<p className="mt-1 text-[#65768b]">{ready.classroom?.schoolYear}학년도</p></td><td className="px-5 py-4"><p>{ready.missingGrades.length?`${ready.missingGrades.join("·")}학년 원본 필요`:"기본 원본 등록"}</p><p className="mt-1 text-[#65768b]">{ready.profile?"활성 분석 있음":"활성 분석 없음"}</p>{ready.currentGradeIncluded&&<p className="mt-1 text-[#65768b]">현재 학년 원본 포함</p>}</td><td className="px-5 py-4"><p>{s.userId?"학교 계정 연결":"학교 계정 미연결"}</p><p className="mt-1 text-[#65768b]">{s.status==="active"?"재학":s.status==="graduated"?`${s.graduatedYear??""}년 졸업`:"보관"}</p></td><td className="px-5 py-4"><div className="flex flex-col items-start gap-2"><Button asChild size="sm" variant="outline"><a href={studentWorkspaceUrl(s.id,"records")}>원본·분석 열람</a></Button><Button size="sm" variant="ghost" disabled={disabled||(s.status==="active"&&data.classes.find(c=>c.id===s.classId)?.grade!==3)||s.isExample} onClick={()=>setStatusStudent(s)}>{s.status==="active"?"졸업 처리":"재학으로 복원"}</Button></div></td></tr>;})}</tbody></table>{!rows.length&&<p className="p-8 text-center text-base leading-7 text-[#65768b]">조건에 맞는 학생이 없습니다. 검색 조건을 초기화하거나 학생을 등록하세요.</p>}</div>
           <div className="flex items-center justify-end gap-3 text-sm"><span>{currentPage} / {pageCount}쪽 · 50명씩 표시</span><Button variant="outline" size="sm" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>이전</Button><Button variant="outline" size="sm" disabled={currentPage===pageCount} onClick={()=>setPage(currentPage+1)}>다음</Button></div>
         </>}
-        {section==="classes"&&<AdminClasses data={data} disabled={disabled} execute={execute} onAdd={()=>setClassDialog(true)}/>}
+        {section==="research"&&<AdminResearch data={data} onKeyword={keyword=>{setArchiveQuery(keyword);navigate("archive");}}/>}
+        {section==="archive"&&<AdminArchive key={archiveQuery} data={data} initialQuery={archiveQuery}/>}
+        {section==="operations"&&<AdminOperations data={data} disabled={disabled} onSaved={refreshed}/>}
+        {section==="history"&&<OperationHistory/>}
+        {section==="classes"&&<AdminClasses data={data} disabled={disabled} onSaved={refreshed} onAdd={()=>setClassDialog(true)}/>}
         {section==="accounts"&&<><AdminAccounts data={data} accounts={report.accounts} disabled={disabled} execute={execute}/><SchoolAccessPanel onChanged={refreshed} refreshKey={report.accounts.map(a=>`${a.id}:${a.role}:${a.status}`).join("|")}/></>}
         {section==="references"&&<ReferenceMaterialsView data={data} busy={disabled} onGuidanceSave={saveGuidance} onUploaded={refreshed} onAction={async payload=>{await execute(payload,"공용 평가 자료 설정을 저장했습니다.");}}/>}
         {section==="storage"&&<><StorageSettings onChanged={refreshed}/><SchoolBackupPanel/><SchoolBaselinePanel/></>}
@@ -134,6 +145,6 @@ export function AdminPortal() {
     {classDialog&&<ClassDialog open onOpenChange={setClassDialog} busy={disabled} admin staffUsers={data.staffUsers} onSave={async payload=>{try{await execute({action:"addClass",...payload},"학급을 추가했습니다.");setClassDialog(false);}catch{}}}/>}
     {studentDialog&&<StudentDialog open onOpenChange={setStudentDialog} classrooms={data.classes} defaultClassId={classId==="all"?null:Number(classId)} busy={disabled} onSave={async payload=>{try{await execute({action:"addStudent",...payload},"학생을 등록했습니다.");setStudentDialog(false);}catch{}}}/>}
     {bulkDialog&&<BulkStudentDialog open onOpenChange={setBulkDialog} existingStudents={data.students} classrooms={data.classes} defaultClassId={classId==="all"?null:Number(classId)} busy={disabled} onSave={async payload=>{await execute({action:"bulkAddStudents",...payload},`${payload.students.length}명을 등록했습니다.`);setBulkDialog(false);}}/>}
-    {statusStudent&&<StudentStatusDialog student={statusStudent} data={data} disabled={disabled} onClose={()=>setStatusStudent(null)} execute={execute}/>}
+    {statusStudent&&<StudentStatusDialog student={statusStudent} data={data} disabled={disabled} onClose={()=>setStatusStudent(null)} onSaved={refreshed}/>}
   </div>;
 }

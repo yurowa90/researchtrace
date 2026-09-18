@@ -4,7 +4,7 @@ import { schoolSite } from "@/lib/site-runtime";
 import { approvedSchoolRole, canAccessSchoolStudent, canManageSchoolClass, isSchoolStaff } from "@/lib/school-permissions";
 import { guidanceForPortal } from "@/lib/guidance-store";
 import type { PortalData } from "@/lib/portal-types";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { or, and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   academicCourseRecords,
@@ -50,6 +50,11 @@ function jsonArray(value: string): string[] {
   } catch {
     return [];
   }
+}
+
+function jsonYears(value: string): number[] {
+  try { const parsed: unknown = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter(v => typeof v === "number" || typeof v === "string" && /^\d{4}$/.test(v)).map(Number).filter(v => Number.isInteger(v) && v >= 2022 && v <= 2100) : []; }
+  catch { return []; }
 }
 
 function chunks<T>(items: T[], size = 25) {
@@ -263,7 +268,7 @@ export async function getPortalData(viewer: Viewer) {
   const classIds = classRows.map((row) => row.id);
   const studentIds = studentRows.map((row) => row.id);
   const subjectRows = classIds.length
-    ? await db.select().from(subjects).where(inArray(subjects.classId, scopedClassIds)).orderBy(asc(subjects.sortOrder))
+    ? await db.select().from(subjects).where(or(inArray(subjects.classId, scopedClassIds), inArray(subjects.id, db.select({id:activities.subjectId}).from(activities).where(inArray(activities.studentId, scopedStudentIds))))).orderBy(asc(subjects.sortOrder))
     : [];
   const activityRows = studentIds.length
     ? await db.select().from(activities).where(inArray(activities.studentId, scopedStudentIds)).orderBy(desc(activities.activityDate), desc(activities.id))
@@ -371,7 +376,7 @@ export async function getPortalData(viewer: Viewer) {
       ...row,
       strengths: jsonArray(row.strengthsJson),
       cautions: jsonArray(row.cautionsJson),
-      sourceYears: jsonArray(row.sourceYearsJson).map(Number).filter(Number.isFinite),
+      sourceYears: jsonYears(row.sourceYearsJson),
     })),
     profileSections: sectionRows.map((row) => ({
       ...row,

@@ -158,7 +158,7 @@ test("Drive file copies are verified and idempotent; failed Sheets batch does no
 
 test("Apps Script adds new tabs without changing existing rows or legacy digest",()=>{
   const h=scriptHarness(),oldColumns=structuredClone(h.config.columns);
-  const added=["guidanceEntries","schoolIdentities","identityEvents"];
+  const added=["guidanceEntries","schoolIdentities","identityEvents","schoolOperations"];
   for(const name of added){delete oldColumns[name];delete h.cells[name];h.properties.splice(h.properties.findIndex(p=>p.title===name),1);}
   h.config.columns=oldColumns;
   const state=fixture().state;for(const name of added)delete state.tables[name];
@@ -189,4 +189,17 @@ test("Google shared storage binds every signed request to the configured home si
   assert.equal(wrong.code,"WRONG_SCHOOL");
   const correct=h.send(h.request("read",{}, {homeSiteId:"home-site"}));
   assert.equal(correct.ok,true);assert.equal(correct.data.homeSiteId,"home-site");
+});
+
+
+test("Apps Script keeps school operations append-only in the same atomic state commit",()=>{
+  const h=scriptHarness(),state=emptySchoolState();
+  insertRow(state,"users",{authUserId:"admin",email:"admin@example.test",displayName:"가상 관리자",role:"admin",status:"approved"});
+  insertRow(state,"schoolOperations",{operationKey:"test:1",batchId:"test",kind:"graduate",targetType:"student",targetId:1,beforeJson:"{}",afterJson:"{}",actorId:1,actorName:"가상 관리자",reason:"가상 검증"});
+  const first=h.send(h.request("commit",{expectedRevision:0,tables:state.tables}));assert.equal(first.ok,true);
+  const modified=structuredClone(state.tables);modified.schoolOperations[0].reason="덮어쓰기";
+  assert.equal(h.send(h.request("commit",{expectedRevision:1,tables:modified})).code,"INVALID_STATE");
+  const removed=structuredClone(state.tables);removed.schoolOperations=[];
+  assert.equal(h.send(h.request("commit",{expectedRevision:1,tables:removed})).code,"INVALID_STATE");
+  assert.equal(h.send(h.request("read")).data.tables.schoolOperations[0].reason,"가상 검증");
 });

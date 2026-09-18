@@ -60,7 +60,7 @@ export function googlePortalData(state: SchoolState, givenViewer: Viewer): Porta
   const selected = parsedArray(t.referenceSelections.find(row => row.userId === viewer.id)?.materialIdsJson ?? "[]").map(Number);
   const data = hydrateProfileDetails({
     guidance: [], referenceChecks: [], appliedCriteria: [],
-    viewer, classes, students, subjects: t.subjects.filter(row => classIds.has(row.classId)).sort((a,b)=>a.sortOrder-b.sortOrder), activities, threads,
+    viewer, classes, students, subjects: t.subjects.filter(row => classIds.has(row.classId) || activities.some(a=>a.subjectId===row.id)).sort((a,b)=>a.sortOrder-b.sortOrder), activities, threads,
     fingerprints: t.fingerprints.filter(row => activityIds.has(row.activityId)).map(row => ({ ...row, keywords: strings(row.keywordsJson), methods: strings(row.methodsJson), evidence: strings(row.evidenceJson), competencies: strings(row.competenciesJson), questions: strings(row.questionsJson), subjectLinks: strings(row.subjectLinksJson) })),
     threadActivities: t.threadActivities.filter(row => threadIds.has(row.threadId)).sort((a,b)=>a.sequence-b.sequence),
     files: t.activityFiles.filter(row => activityIds.has(row.activityId)).map(({ id, activityId, originalName, contentType, sizeBytes }) => ({ id, activityId, originalName, contentType, sizeBytes })),

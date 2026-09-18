@@ -75,7 +75,7 @@ function sheetsApi(config, path, method, body) {
 }
 function digest(text) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8).map(x => ('0' + (x & 255).toString(16)).slice(-2)).join(''); }
 function tableDigest(tables, columns) {
-  return digest(JSON.stringify(Object.keys(columns).filter(name=>['guidanceEntries','schoolIdentities','identityEvents'].indexOf(name)<0||(tables[name]||[]).length>0).sort().map(name => [name, (tables[name] || []).map(row => columns[name].map(key => row[key] === undefined ? null : row[key]))])));
+  return digest(JSON.stringify(Object.keys(columns).filter(name=>['guidanceEntries','schoolIdentities','identityEvents','schoolOperations'].indexOf(name)<0||(tables[name]||[]).length>0).sort().map(name => [name, (tables[name] || []).map(row => columns[name].map(key => row[key] === undefined ? null : row[key]))])));
 }
 function checkedResultFile(config, id) {
   const file = DriveApp.getFileById(id), parents = file.getParents(); let inside = false;
@@ -116,6 +116,11 @@ function readState(config) {
 }
 function writeState(config, data) {
   const current = readState(config);
+  // Administrator operation history may only grow; existing events are immutable.
+  if (config.columns.schoolOperations) {
+    const before = current.tables.schoolOperations || [], after = data.tables && data.tables.schoolOperations;
+    if (!Array.isArray(after) || after.length < before.length || before.some((row, i) => JSON.stringify(config.columns.schoolOperations.map(key => row[key])) !== JSON.stringify(config.columns.schoolOperations.map(key => after[i][key])))) fail('INVALID_STATE');
+  }
   if (current.revision !== data.expectedRevision) fail('CONFLICT');
   const names = Object.keys(config.columns);
   if (!data.tables || JSON.stringify(Object.keys(data.tables).sort()) !== JSON.stringify(names.sort())) fail('INVALID_STATE');
