@@ -3,12 +3,13 @@ import { getStudentReport, getStudentHistory, saveStudentGuidance, StudentAccess
 import { SharedStorageSetupError } from "@/lib/google-bridge";
 import { SiteAccessError } from "@/lib/site-runtime";
 import { rejectCrossSiteWrite } from "@/lib/request-guard";
+import { StudentLinkConflictError } from "@/lib/school-permissions";
 
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"};
 function failure(error:unknown) {
   if(error instanceof SharedStorageSetupError)return Response.json({state:"setup",error:"학교 자료 연결을 준비하고 있습니다. 연결이 완료되면 학생 계정으로 사용할 수 있습니다."},{status:503,headers});
-  if(error instanceof StudentAccessError||error instanceof SiteAccessError)return Response.json({state:"forbidden",error:error.message},{status:403,headers});
+  if(error instanceof StudentAccessError||error instanceof SiteAccessError||error instanceof StudentLinkConflictError)return Response.json({state:"forbidden",error:error.message},{status:403,headers});
   const message=error instanceof Error?error.message:"";
   return Response.json({error:message&&!/Failed query|D1_ERROR|SQLITE_|constraint|\bSELECT\b|\bINSERT\b/i.test(message)?message:"자료를 처리하지 못했습니다. 다시 확인해 주세요."},{status:400,headers});
 }

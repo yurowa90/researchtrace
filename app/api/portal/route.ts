@@ -1,5 +1,6 @@
 import { rejectCrossSiteWrite } from "@/lib/request-guard";
 import { ensureViewer, getPortalData, performPortalAction } from "@/lib/data";
+import { StudentLinkConflictError } from "@/lib/school-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function GET() {
     return Response.json(await getPortalData(viewer), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("portal GET failed", error instanceof Error ? error.name : "unknown");
-    return Response.json({ error: message(error) }, { status: 500 });
+    return Response.json({ error: message(error) }, { status: error instanceof StudentLinkConflictError ? 403 : 500, headers: { "Cache-Control": "private, no-store" } });
   }
 }
 

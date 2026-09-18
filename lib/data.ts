@@ -1,7 +1,7 @@
 import { hydrateProfileDetails, profileEvidenceIssues } from "@/lib/profile-evidence";
 import { ensureLegacyIdentity, ensureSharedIdentity, type SchoolViewer } from "@/lib/school-identities";
 import { schoolSite } from "@/lib/site-runtime";
-import { approvedSchoolRole, canAccessSchoolStudent, canManageSchoolClass, isSchoolStaff } from "@/lib/school-permissions";
+import { approvedSchoolRole, assertSingleStudentLink, canAccessSchoolStudent, canManageSchoolClass, isSchoolStaff } from "@/lib/school-permissions";
 import { guidanceForPortal } from "@/lib/guidance-store";
 import type { PortalData } from "@/lib/portal-types";
 import { or, and, asc, desc, eq, inArray, sql } from "drizzle-orm";
@@ -228,6 +228,7 @@ export async function getPortalData(viewer: Viewer) {
 
   if (await googleEnabled()) return googlePortalData(await readGoogleState(), viewer);
   const db = getDb();
+  await checkStudentLinks(viewer);
   // Use permission-scoped subqueries instead of binding one parameter per
   // student/profile. A school-wide view must keep working after a 300-row import.
   const studentScope = viewer.role === "admin" ? undefined
@@ -424,7 +425,14 @@ async function teacherClass(viewer: Viewer, classId: number) {
   throw new Error("이 학급에 접근할 수 없습니다.");
 }
 
+async function checkStudentLinks(viewer: Viewer) {
+  if (approvedSchoolRole(viewer) !== "student") return;
+  const links = await getDb().select({ id: students.id }).from(students).where(eq(students.userId, viewer.id)).limit(2);
+  assertSingleStudentLink(viewer, links.length);
+}
+
 async function accessibleStudent(viewer: Viewer, studentId: number) {
+  await checkStudentLinks(viewer);
   const db = getDb();
   const [row] = await db
     .select({ student: students, classroom: classes })
@@ -516,18 +524,19 @@ export async function performPortalAction(viewer: Viewer, body: Record<string, u
         if (alreadyLinked) throw new Error("이미 다른 학생 프로필에 연결된 계정입니다.");
       }
     }
-    const [student] = await db.insert(students).values({
+    const insert = db.insert(students).values({
       classId,
+      userId: account?.id ?? null,
       studentNumber: requiredText(body.studentNumber, "학번", 30),
       name: requiredText(body.name, "이름", 80),
       email,
     }).returning();
-    if (account) {
-      await db.batch([
-        db.update(students).set({ userId: account.id }).where(eq(students.id, student.id)),
+    const [student] = account
+      ? (await db.batch([
+        insert,
         db.update(users).set({ role: "student", status: "approved" }).where(eq(users.id, account.id)),
-      ]);
-    }
+      ]))[0]
+      : await insert;
     return { ok: true, student };
   }
 
