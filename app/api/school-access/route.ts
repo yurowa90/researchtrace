@@ -2,7 +2,7 @@ import { ensureViewer } from "@/lib/data";
 import { isSchoolAdmin } from "@/lib/school-permissions";
 import { schoolSite } from "@/lib/site-runtime";
 import { getStorageConnection, assertStorageWritable, readGoogleState, commitGoogleState } from "@/lib/google-bridge";
-import { currentIdentityActor, readLegacyIdentityData, saveLegacyIdentityReview, applyIdentityReview, registerTeacherIdentity } from "@/lib/school-identities";
+import { currentIdentityActor, readLegacyIdentityData, saveLegacyIdentityReview, applyIdentityReview, registerTeacherIdentity, registerStudentIdentity } from "@/lib/school-identities";
 import { rejectCrossSiteWrite } from "@/lib/request-guard";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ export async function GET() {
     if(!isSchoolAdmin(currentIdentityActor(t,viewer))) return Response.json({error:"현재 관리자 권한을 확인하세요."},{status:403,headers});
     return Response.json({site:schoolSite(),storage:config?.state??"legacy",identitySchemaReady:!google?.sourceTables||["schoolIdentities","identityEvents"].every(n=>google.sourceTables!.includes(n)),currentIdentityId:viewer.loginIdentityId??null,
       accounts:t.users.map(({id,displayName,email,role,status})=>({id,displayName,email,role,status})),
+      students:google?.tables.students.filter(s=>!s.isExample).map(({id,name,studentNumber,email,userId,classId})=>({id,name,studentNumber,email,userId,className:google.tables.classes.find(c=>c.id===classId)?.name??"학급 미확인"}))??[],
       identities:t.schoolIdentities.map(({subject,...row})=>({...row,hasVerifiedSubject:Boolean(subject)})),
       events:[...t.identityEvents].sort((a,b)=>b.id-a.id).slice(0,100),
     },{headers});
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     const body=await request.json() as Record<string,unknown>;
     if((await getStorageConnection())?.state==="google") {
       const state=await readGoogleState();
-      if(body.action==="registerTeacher")registerTeacherIdentity(state,viewer,body);else applyIdentityReview(state,viewer,body);
+      if(body.action==="registerTeacher")registerTeacherIdentity(state,viewer,body);else if(body.action==="registerStudent")registerStudentIdentity(state,viewer,body);else applyIdentityReview(state,viewer,body);
       await commitGoogleState(state);
     } else await saveLegacyIdentityReview(viewer,body);
     return Response.json({ok:true},{headers});

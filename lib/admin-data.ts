@@ -12,6 +12,7 @@ export type AdminReport = {
   storage: "legacy" | "migrating" | "google";
   isHome: boolean;
   teacherUrl: string | null;
+  studentUrl: string | null;
   pendingConnections: number;
   accounts: { id:number; displayName:string; email:string; role:string; status:string }[];
 };
@@ -28,7 +29,7 @@ export async function getAdminReport(viewer: Viewer): Promise<AdminReport> {
   const { actor, connection, state, tables } = await currentAdmin(viewer);
   return {
     data: state ? googlePortalData(state, actor) : await getPortalData(actor),
-    storage: connection?.state ?? "legacy", isHome: schoolSite().isHome, teacherUrl:portalLink("TRACE_TEACHER_PORTAL_URL"),
+    storage: connection?.state ?? "legacy", isHome: schoolSite().isHome, teacherUrl:portalLink("TRACE_TEACHER_PORTAL_URL"),studentUrl:portalLink("TRACE_STUDENT_PORTAL_URL"),
     pendingConnections: tables.schoolIdentities.filter(r => r.status === "pending").length,
     accounts: tables.users.map(({id,displayName,email,role,status})=>({id,displayName,email,role,status})),
   };

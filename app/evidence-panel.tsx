@@ -15,7 +15,7 @@ export function SourceCard({section,data}:{section:ProfileSection;data:PortalDat
     <h3 className="font-semibold">{section.title}</h3><p className="text-base leading-7 text-[#43566f]">{section.summary}</p>
     {section.evidence.length?<div className="space-y-2 border-l-4 border-[#c9d9f0] bg-[#f7f9fc] p-3"><p className="text-sm font-semibold">분석에 사용한 근거 문장</p>{section.evidence.map((line,i)=><p key={i} className="whitespace-pre-wrap text-sm leading-6">{line}</p>)}</div>:<p className="text-sm text-amber-800">근거 문장이 연결되지 않았습니다. 원문 확인이 필요합니다.</p>}
     {section.sourceLocation&&<p className="text-sm text-[#637389]">원문 위치: {section.sourceLocation}</p>}
-    {record?<Button asChild size="sm" variant="outline"><a href={`/api/student-records/${record.id}${pdf?"?inline=1":""}${pdf&&section.page?`#page=${section.page}`:""}`} target="_blank" rel="noreferrer"><ExternalLink/>{pdf?"원문 열기":"원본 받기"}{section.page?` · ${section.page}쪽`:""}</a></Button>:<p className="text-sm text-amber-800">원본 파일 위치가 아직 연결되지 않았습니다. 다음 분석에서 원본 ID와 확인한 쪽수를 포함하세요.</p>}
+    {record?<Button asChild size="sm" variant="outline"><a href={`/api/student-records/${record.id}${pdf?"?inline=1":""}${pdf&&section.page?`#page=${section.page}`:""}`} target="_blank" rel="noreferrer"><ExternalLink/>{pdf?"원문 열기":"원본 받기"}{section.page?` · ${section.page}쪽`:""}</a></Button>:<p className="text-sm text-amber-800">원본 파일 위치가 아직 연결되지 않았습니다. 담당 선생님과 원본 파일 및 해당 쪽수를 확인하세요.</p>}
     <p className="text-xs leading-5 text-[#718095]">원문·자기보고·분석 해석의 구분입니다. 자료 미확인은 학생이 활동을 하지 않았다는 뜻이 아닙니다.</p>
   </section>;
 }

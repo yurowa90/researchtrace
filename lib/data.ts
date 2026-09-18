@@ -255,7 +255,7 @@ export async function getPortalData(viewer: Viewer) {
       ? await db.select().from(students).where(inArray(students.classId, scopedClassIds)).orderBy(asc(students.studentNumber))
       : [];
   } else {
-    studentRows = await db.select().from(students).where(eq(students.userId, viewer.id)).limit(1);
+    studentRows = await db.select().from(students).where(eq(students.userId, viewer.id));
     const classIds = studentRows.map((row) => row.classId);
     classRows = classIds.length ? await db.select().from(classes).where(inArray(classes.id, scopedClassIds)) : [];
   }
