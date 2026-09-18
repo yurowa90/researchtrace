@@ -12,6 +12,10 @@ export async function readSchoolSnapshot(): Promise<SchoolSnapshot> {
     const state = await readGoogleState();
     return { capturedAt: new Date().toISOString(), storage: "google", revision: state.revision, tables: state.tables };
   }
+  return { capturedAt: new Date().toISOString(), storage: "legacy", revision: null, tables: await readLegacySchoolTables() };
+}
+
+export async function readLegacySchoolTables(): Promise<SchoolRows> {
   if (!env.DB) throw new Error("학교 자료 저장소를 사용할 수 없습니다.");
   // One transactional D1 batch gives all tables the same read snapshot.
   // Table and column names come only from the application schema allowlist.
@@ -32,5 +36,5 @@ export async function readSchoolSnapshot(): Promise<SchoolSnapshot> {
       return Object.fromEntries(Object.entries(columns).map(([key, column]) => [key, row[key] == null ? null : column.mapFromDriverValue(row[key])]));
     })];
   })) as SchoolRows;
-  return { capturedAt: new Date().toISOString(), storage: "legacy", revision: null, tables };
+  return tables;
 }

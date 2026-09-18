@@ -13,6 +13,7 @@ import { ReferenceMaterialsView } from "@/app/reference-materials-view";
 import { SchoolAccessPanel } from "@/app/school-access-panel";
 import { SchoolBaselinePanel } from "@/app/school-baseline-panel";
 import { SchoolBackupPanel } from "@/app/school-backup-panel";
+import { OperationalReadinessPanel } from "@/app/operational-readiness-panel";
 import { StorageSettings } from "@/app/storage-settings";
 import { AdminResearch, AdminArchive } from "@/app/admin-research";
 import { AdminOperations, OperationHistory } from "@/app/admin-operations";
@@ -138,7 +139,7 @@ export function AdminPortal() {
         {section==="classes"&&<AdminClasses data={data} disabled={disabled} onSaved={refreshed} onAdd={()=>setClassDialog(true)}/>}
         {section==="accounts"&&<><AdminAccounts data={data} accounts={report.accounts} disabled={disabled} execute={execute}/><SchoolAccessPanel onChanged={refreshed} refreshKey={report.accounts.map(a=>`${a.id}:${a.role}:${a.status}`).join("|")}/></>}
         {section==="references"&&<ReferenceMaterialsView data={data} busy={disabled} onGuidanceSave={saveGuidance} onUploaded={refreshed} onAction={async payload=>{await execute(payload,"공용 평가 자료 설정을 저장했습니다.");}}/>}
-        {section==="storage"&&<><StorageSettings onChanged={refreshed}/><SchoolBackupPanel/><SchoolBaselinePanel/></>}
+        {section==="storage"&&<><OperationalReadinessPanel/><StorageSettings onChanged={refreshed}/><SchoolBackupPanel/><SchoolBaselinePanel/></>}
         {section==="guide"&&<AdminGuide navigate={navigate}/>}
       </main>
     </div>
