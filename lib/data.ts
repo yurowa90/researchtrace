@@ -920,6 +920,7 @@ export async function performPortalAction(viewer: Viewer, body: Record<string, u
     await teacherClass(viewer, student.classId);
     const [account] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     if (!account || account.status !== "pending" || account.role !== "student") throw new Error("승인 대기 중인 학생 계정만 연결할 수 있습니다.");
+    if (student.userId !== null && student.userId !== account.id) throw new Error("이미 다른 계정에 연결된 학생입니다. 기존 연결을 확인하세요.");
     if (!student.email || student.email.toLowerCase() !== account.email.toLowerCase()) throw new Error("학생 프로필과 계정 이메일이 일치하지 않습니다.");
     const [alreadyLinked] = await db.select({ id: students.id }).from(students).where(eq(students.userId, userId)).limit(1);
     if (alreadyLinked && alreadyLinked.id !== studentId) throw new Error("이미 다른 학생 프로필에 연결된 계정입니다.");

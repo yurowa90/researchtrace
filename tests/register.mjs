@@ -9,7 +9,7 @@ globalThis.__portalTestEnv = {};
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === "cloudflare:workers") return { url: "data:text/javascript,export const env=globalThis.__portalTestEnv", shortCircuit: true };
-    if (specifier === "@/lib/server-auth") return { url: "data:text/javascript,export async function getRequestUser(){return null}", shortCircuit: true };
+    if (specifier === "@/lib/server-auth") return { url: "data:text/javascript,export async function getRequestUser(){return globalThis.__portalTestUser??null}", shortCircuit: true };
     if (specifier.startsWith("@/")) {
       const base = resolve(root, specifier.slice(2));
       const path = [base + ".ts", resolve(base, "index.ts")].find(existsSync);

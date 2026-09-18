@@ -31,14 +31,14 @@ function IdentityRow({row,report,busy,onReview}:{row:Link;report:Report;busy:boo
     </div>}
   </div>;
 }
-export function SchoolAccessPanel() {
+export function SchoolAccessPanel({onChanged,refreshKey}:{onChanged?:()=>Promise<void>;refreshKey?:string} = {}) {
   const [report,setReport]=React.useState<Report|null>(null),[busy,setBusy]=React.useState(false),[error,setError]=React.useState(""),[message,setMessage]=React.useState("");
   const lock=React.useRef(false);
   const refresh=React.useCallback(async()=>{const response=await fetch("/api/school-access",{cache:"no-store"});const body=await response.json() as Report&{error?:string};if(!response.ok)throw new Error(body.error||"연결 현황을 읽지 못했습니다.");setReport(body);},[]);
-  React.useEffect(()=>{void refresh().catch(e=>setError(e instanceof Error?e.message:"연결 현황을 읽지 못했습니다."));},[refresh]);
+  React.useEffect(()=>{void refresh().catch(e=>setError(e instanceof Error?e.message:"연결 현황을 읽지 못했습니다."));},[refresh,refreshKey]);
   const review=async(body:Record<string,unknown>)=>{
     if(lock.current)return false;lock.current=true;setBusy(true);setError("");setMessage("");
-    try{const response=await fetch("/api/school-access",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const result=await response.json() as {error?:string};if(!response.ok)throw new Error(result.error||"계정 연결을 처리하지 못했습니다.");await refresh();setMessage("계정 연결 상태와 처리 이력을 저장했습니다.");return true;}
+    try{const response=await fetch("/api/school-access",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const result=await response.json() as {error?:string};if(!response.ok)throw new Error(result.error||"계정 연결을 처리하지 못했습니다.");await refresh();await onChanged?.();setMessage("계정 연결 상태와 처리 이력을 저장했습니다.");return true;}
     catch(e){setError(e instanceof Error?e.message:"계정 연결을 처리하지 못했습니다.");return false;}
     finally{lock.current=false;setBusy(false);}
   };
@@ -47,8 +47,8 @@ export function SchoolAccessPanel() {
     <p className="text-base leading-7 text-[#65768b]">사이트가 나뉘어도 기존 학교 계정과 학생 기록을 이어서 사용합니다. 다른 사이트에서 들어온 연결 요청은 본인 확인 후 승인합니다. 이메일이 같아도 자동으로 합치지 않습니다.</p>
     {error&&<p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{message&&<p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">{message}</p>}
     {report&&<>
-      <div className="rounded-xl bg-slate-50 p-4 text-sm leading-6"><p>현재 화면: {modes[report.site.mode]}</p><p>학교 자료: {report.storage==="google"?"공통 Google Drive·Sheets 사용 중":report.storage==="migrating"?"구글 저장소로 이전 중":"기존 사이트 저장소 사용 중"}</p><p>{report.storage==="google"&&report.identitySchemaReady?"공통 계정 연결을 저장할 준비가 되었습니다.":report.storage==="google"?"구글 연결 코드를 갱신해야 다른 사이트의 계정을 연결할 수 있습니다.":"세 사이트가 같은 자료를 사용하려면 아래에서 구글 연결과 자료 이전을 완료해야 합니다."}</p></div>
-      <p className="text-sm leading-6 text-[#65768b]">연결 승인 대기 {report.identities.filter(r=>r.status==="pending").length}건 · 사용 중 {report.identities.filter(r=>r.status==="approved").length}건. 연결 해제는 학생 기록을 삭제하지 않습니다. 새 학교 계정의 역할 승인은 아래 ‘승인 대기 계정’에서 처리합니다.</p>
+      <div className="rounded-xl bg-slate-50 p-4 text-sm leading-6"><p>현재 화면: {modes[report.site.mode]}</p><p>학교 자료: {report.storage==="google"?"공통 Google Drive·Sheets 사용 중":report.storage==="migrating"?"구글 저장소로 이전 중":"기존 사이트 저장소 사용 중"}</p><p>{report.storage==="google"&&report.identitySchemaReady?"공통 계정 연결을 저장할 준비가 되었습니다.":report.storage==="google"?"구글 연결 코드를 갱신해야 다른 사이트의 계정을 연결할 수 있습니다.":"세 사이트가 같은 자료를 사용하려면 저장소·백업에서 구글 연결과 자료 이전을 완료해야 합니다."}</p></div>
+      <p className="text-sm leading-6 text-[#65768b]">연결 승인 대기 {report.identities.filter(r=>r.status==="pending").length}건 · 사용 중 {report.identities.filter(r=>r.status==="approved").length}건. 연결 해제는 학생 기록을 삭제하지 않습니다. 새 학교 계정의 역할 승인은 ‘학교 계정 승인 대기’에서 처리합니다.</p>
       <div className="max-h-[600px] space-y-3 overflow-auto">{[...report.identities].sort((a,b)=>Number(b.status==="pending")-Number(a.status==="pending")||b.id-a.id).map(row=><IdentityRow key={`${row.id}:${row.revision}`} row={row} report={report} busy={busy||report.storage==="migrating"||!report.identitySchemaReady} onReview={review}/>)}{!report.identities.length&&<p className="rounded-xl border p-4 text-sm text-[#65768b]">아직 사이트 계정 연결 요청이 없습니다.</p>}</div>
       <details className="rounded-xl border p-4"><summary className="cursor-pointer font-semibold">최근 연결 처리 이력</summary>{report.events.length?<ol className="mt-3 space-y-3">{report.events.map(e=><li key={e.id} className="border-t pt-3 text-sm leading-6"><p>{e.action==="approve"?"연결 승인":e.action==="reject"?"연결 거절":"연결 해제"} · 요청 #{e.identityId} · {e.createdAt}</p><p>처리자: {report.accounts.find(a=>a.id===e.actorId)?.displayName??`계정 #${e.actorId}`}</p><p>{e.note}</p></li>)}</ol>:<p className="mt-3 text-sm text-[#65768b]">관리자가 처리한 연결 이력이 없습니다.</p>}</details>
     </>}

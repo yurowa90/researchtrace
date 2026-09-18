@@ -825,7 +825,7 @@ export function ClassDialog({
 }) {
   const [name, setName] = React.useState("");
   const [grade, setGrade] = React.useState("2");
-  const [schoolYear, setSchoolYear] = React.useState("2026");
+  const [schoolYear, setSchoolYear] = React.useState(String(new Date().getFullYear()));
   const [teacherId, setTeacherId] = React.useState("");
   React.useEffect(() => {
     if (admin && !teacherId && staffUsers.length) {

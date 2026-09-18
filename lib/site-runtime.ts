@@ -3,6 +3,7 @@ import hosting from "../.openai/hosting.json" with { type: "json" };
 
 export type PortalMode = "unified" | "student" | "teacher" | "admin";
 export type SchoolSite = { siteId: string; homeSiteId: string; mode: PortalMode; isHome: boolean };
+export class SiteAccessError extends Error {}
 export function runtimeValue(key: string) { return (env as unknown as Record<string, unknown>)[key] ?? process.env[key]; }
 export function schoolSite(): SchoolSite {
   const siteId = hosting.project_id;

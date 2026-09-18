@@ -4,7 +4,7 @@ import { users, schoolIdentities, identityEvents } from "@/db/schema";
 import { commitGoogleState, readGoogleState, GoogleConflictError } from "@/lib/google-bridge";
 import { insertRow, type SchoolState } from "@/lib/school-tables";
 import { isSchoolAdmin } from "@/lib/school-permissions";
-import { roleAllowedOnSite, portalModeLabels, type SchoolSite } from "@/lib/site-runtime";
+import { roleAllowedOnSite, portalModeLabels, SiteAccessError, type SchoolSite } from "@/lib/site-runtime";
 
 type User = typeof users.$inferSelect;
 export type SchoolViewer = User & { loginIdentityId?: number; loginSiteId?: string };
@@ -20,7 +20,7 @@ function linkedViewer(auth: PlatformLogin, row: LoginIdentity, accounts: User[],
   if (row.status !== "approved") return pendingViewer(auth, row);
   const user = accounts.find(u => u.id === row.userId);
   if (!user) throw new Error("연결된 학교 계정을 확인할 수 없습니다.");
-  if (user.status === "approved" && !roleAllowedOnSite(user.role, site.mode)) throw new Error(`이 계정은 ${portalModeLabels[site.mode]}를 사용할 수 없습니다. 역할에 맞는 사이트로 접속하세요.`);
+  if (user.status === "approved" && !roleAllowedOnSite(user.role, site.mode)) throw new SiteAccessError(`이 계정은 ${portalModeLabels[site.mode]}를 사용할 수 없습니다. 역할에 맞는 사이트로 접속하세요.`);
   return { ...user, loginIdentityId: row.id, loginSiteId: row.siteId };
 }
 const identityValues = (auth: PlatformLogin, site: SchoolSite, user?: User) => ({
@@ -46,7 +46,7 @@ export async function ensureLegacyIdentity(auth: PlatformLogin, site: SchoolSite
   let [user] = await db.select().from(users).where(eq(users.authUserId, auth.userId)).limit(1);
   if (!writable) {
     if (!user) throw new Error("저장소 이전 중입니다. 완료 후 로그인하세요.");
-    if (!roleAllowedOnSite(user.role, site.mode)) throw new Error("역할에 맞는 사이트로 접속하세요.");
+    if (!roleAllowedOnSite(user.role, site.mode)) throw new SiteAccessError("역할에 맞는 사이트로 접속하세요.");
     return user;
   }
   if (!user) {
