@@ -3,6 +3,7 @@ import * as schema from "@/db/schema";
 
 // Explicit allowlist: connection secrets are deliberately excluded from exports.
 export const schoolTables = {
+  schoolOperations: schema.schoolOperations,
   schoolIdentities: schema.schoolIdentities, identityEvents: schema.identityEvents,
   guidanceEntries: schema.guidanceEntries,
   users: schema.users, classes: schema.classes, students: schema.students,

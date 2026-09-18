@@ -1,10 +1,10 @@
 // Shared definitions for the three future sites. This version is independent
 // of the Work JSON schema version and does not rewrite existing identifiers.
-export const SCHOOL_CONTRACT_VERSION = "1.1";
+export const SCHOOL_CONTRACT_VERSION = "1.2";
 export const schoolDataContract = [
   { entity: "학생", key: "students.id", rule: "이름·이메일·학번이 바뀌어도 같은 ID를 사용합니다. 학번은 앞자리 0을 보존하는 문자열이며 현재 학급 안에서 중복될 수 없습니다." },
   { entity: "계정", key: "users.id → students.userId", rule: "내부 계정 ID와 학생 ID를 구분합니다. 학생 계정 하나는 학생 한 명에게 연결합니다. 미연결 학생도 자료를 누적할 수 있습니다." },
-  { entity: "학급·담임", key: "classes.id / teacherId / schoolYear", rule: "현재 소속은 students.classId, 현재 담당자는 classes.teacherId로 판단합니다. 학급 이동은 학생 ID를 유지하고 enrollment 지도 이력에 남깁니다." },
+  { entity: "학급·담임", key: "classes.id / teacherId / schoolYear", rule: "현재 소속은 students.classId, 현재 담당자는 classes.teacherId로 판단합니다. 학급 이동은 학생 ID를 유지합니다. 기존 enrollment 지도 이력과 관리자 schoolOperations 변경 이력을 함께 보존합니다." },
   { entity: "기록 시점", key: "grade / schoolYear / sourceYears", rule: "학년, 기록의 학년도, 분석에 포함된 학년도를 구분합니다. 2·3학년 모두 원본에 현재 학년 기록이 있으면 분석에 포함합니다." },
   { entity: "원본·분석", key: "studentRecords.id / profileSnapshots.id", rule: "원본 파일과 분석 버전을 각각 식별합니다. 분석 하위 항목은 같은 학생·같은 분석 버전에 속하며 활성 버전은 학생당 하나입니다." },
   { entity: "평가 자료", key: "referenceMaterials.id / admissionsYear", rule: "모집요강의 대입 학년도는 학생부 학년도와 구분합니다. 파일·판본·승인 정보와 학생에게 적용한 기준을 함께 보존합니다." },

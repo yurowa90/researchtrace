@@ -1,9 +1,11 @@
 import type { PortalData } from "@/lib/portal-types";
 import { studentReadiness } from "@/lib/portal-workflow";
 
-export type AdminSection = "overview" | "students" | "classes" | "accounts" | "references" | "storage" | "guide";
+export type AdminSection = "research" | "archive" | "operations" | "history" | "overview" | "students" | "classes" | "accounts" | "references" | "storage" | "guide";
 export const adminSections: { id: AdminSection; label: string }[] = [
   { id: "overview", label: "학교 운영 현황" }, { id: "students", label: "학생 관리" },
+  { id: "research", label: "학교 연구 현황" }, { id: "archive", label: "누적 연구 보관함" },
+  { id: "operations", label: "진급·졸업 일괄 관리" }, { id: "history", label: "학적·담임 변경 이력" },
   { id: "classes", label: "학급·담임 배정" }, { id: "accounts", label: "계정·접근 관리" },
   { id: "references", label: "공용 평가 자료" }, { id: "storage", label: "저장소·백업" },
   { id: "guide", label: "관리자 사용 안내" },

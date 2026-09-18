@@ -16,7 +16,7 @@ export type AdminReport = {
   pendingConnections: number;
   accounts: { id:number; displayName:string; email:string; role:string; status:string }[];
 };
-async function currentAdmin(viewer: Viewer) {
+export async function currentAdmin(viewer: Viewer) {
   // Check stored identity and role, including revocation, before returning data.
   const connection = await getStorageConnection();
   const state = connection?.state === "google" ? await readGoogleState() : null;
