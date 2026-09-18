@@ -60,7 +60,7 @@ export async function bridgeCall<T>(operation: string, data: unknown, connection
 }
 export function normalizeGoogleState(state:SchoolState):SchoolState {
   const sourceTables=Object.keys(state.tables);
-  for (const name of ["guidanceEntries", "schoolIdentities", "identityEvents"] as const) if (!sourceTables.includes(name)) state.tables[name]=[];
+  for (const name of ["guidanceEntries", "schoolIdentities", "identityEvents", "schoolOperations"] as const) if (!sourceTables.includes(name)) state.tables[name]=[];
   return {...state,sourceTables};
 }
 export async function readGoogleState() {
@@ -71,7 +71,7 @@ export async function readGoogleState() {
 }
 export async function commitGoogleState(state: SchoolState) {
   const tables={...state.tables} as Record<string,unknown>;
-  for (const name of ["guidanceEntries", "schoolIdentities", "identityEvents"] as const) if(state.sourceTables && !state.sourceTables.includes(name)) {
+  for (const name of ["guidanceEntries", "schoolIdentities", "identityEvents", "schoolOperations"] as const) if(state.sourceTables && !state.sourceTables.includes(name)) {
     if(state.tables[name].length)throw new Error("Google 연결 코드 갱신이 필요합니다. 관리자 학교 설정에서 최신 코드를 설치하고 setupTrace를 실행하세요.");
     delete tables[name];
   }

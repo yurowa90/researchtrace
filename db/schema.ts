@@ -11,6 +11,26 @@ const createdAt = text("created_at")
   .notNull()
   .default(sql`(CURRENT_TIMESTAMP)`);
 
+// School operations are private to administrators and included in backups.
+// Each affected entity has its own immutable before/after event.
+export const schoolOperations = sqliteTable("school_operations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  operationKey: text("operation_key").notNull(),
+  batchId: text("batch_id").notNull(),
+  kind: text("kind", { enum: ["promote", "transfer", "graduate", "restore", "assign_teacher"] }).notNull(),
+  targetType: text("target_type", { enum: ["student", "class"] }).notNull(),
+  targetId: integer("target_id").notNull(),
+  beforeJson: text("before_json").notNull(),
+  afterJson: text("after_json").notNull(),
+  actorId: integer("actor_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  actorName: text("actor_name").notNull(),
+  reason: text("reason").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+}, table => [
+  uniqueIndex("idx_school_operations_key").on(table.operationKey),
+  index("idx_school_operations_target").on(table.targetType, table.targetId, table.id),
+]);
+
 // Append-only revisions. The unique key makes concurrent edits fail instead of
 // silently overwriting a student's response or a teacher's feedback.
 export const guidanceEntries = sqliteTable("guidance_entries", {
